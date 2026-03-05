@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<fault-injection>
+
+    <model>R_Protocol.smv</model>
+
+    <target-module>Server</target-module>
+
+    <redundancy count="2"/>
+
+    <faults>
+        <fault id="stuck_receiving">
+            <type>stuck-at</type>
+            <variable>server_state</variable>
+            <value>receiving</value>
+        </fault>
+
+        <fault id="stuck_received">
+            <type>stuck-at</type>
+            <variable>server_state</variable>
+            <value>received</value>
+        </fault>
+    </faults>
+
+</fault-injection>
