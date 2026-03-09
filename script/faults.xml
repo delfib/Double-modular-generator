@@ -21,4 +21,17 @@
         </fault>
     </faults>
 
+    <properties>
+        <property id="nominal_implies_extended">
+            <comment>Whenever nominal server consumes, eventually an extended server consumes</comment>
+            <spec>
+                AG (
+                    nominal.server.server_state = received ->
+                    AF (extended.server1.server_state = received
+                        | extended.server2.server_state = received)
+                )
+            </spec>
+        </property>
+    </properties>
+
 </fault-injection>

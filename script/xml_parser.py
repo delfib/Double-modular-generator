@@ -9,12 +9,22 @@ class Fault:
     def __repr__(self):
         return f"Fault(type={self.type}, variable={self.variable}, value={self.value})"
 
+class Property:
+    def __init__(self, id, comment, spec):
+        self.id = id
+        self.comment = comment
+        self.spec = spec
+
+    def __repr__(self):
+        return f"Property(id={self.id})"
+    
 class FaultModel:
-    def __init__(self, model_file, target_module, redundancy, faults):
+    def __init__(self, model_file, target_module, redundancy, faults, properties=None):
         self.model_file = model_file
         self.target_module = target_module
         self.redundancy = redundancy
         self.faults = faults
+        self.properties = properties or []
 
     def __repr__(self):
         return (
@@ -61,9 +71,23 @@ def parse_fault_model(xml_path):
 
             faults.append(Fault(type.strip(), variable.strip(), value.strip()))
 
+    # <properties>
+    properties = []
+    properties_elem = root.find("properties")
+    if properties_elem is not None:
+        for p in properties_elem.findall("property"):
+            prop_id = p.attrib.get("id", "")
+            comment = p.findtext("comment", default="").strip()
+            spec = p.findtext("spec")
+            if spec is None:
+                raise ValueError(f"Property '{prop_id}' is missing <spec>")
+            properties.append(Property(prop_id, comment, spec.strip()))
+
+
     return FaultModel(
         model_file=model_file,
         target_module=target_module,
         redundancy=redundancy,
-        faults=faults
+        faults=faults,
+        properties=properties
     )

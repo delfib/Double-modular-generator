@@ -312,15 +312,19 @@ def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, n_va
     return text
 
 
-def build_sync_module(target_module, redundancy):
+def build_sync_module(target_module, redundancy, properties=None):
     """
     Build the Sync module that instantiates both NominalR and ExtendedR.
     """
-    # Build the AF condition: any extended server reaches received
-    af_parts = ' | '.join(
-        f'extended.server{i}.server_state = received'
-        for i in range(1, redundancy + 1)
-    )
+    properties_block = ""
+    if properties:
+        lines = []
+        for prop in properties:
+            if prop.comment:
+                lines.append(f"-- {prop.comment}")
+            lines.append(f"SPEC {prop.spec}\n")
+        properties_block = "\n" + "\n".join(lines)
+
 
     sync = (
         f"-- =========================================================\n"
@@ -332,6 +336,7 @@ def build_sync_module(target_module, redundancy):
         f"    extended : ExtendedR();\n"
         f"\n"
         f"\n"
+        f"{properties_block}\n"
         f"\n"
         f"\n"
         f"-- =========================================================\n"
@@ -380,7 +385,7 @@ class FaultInjectionEngine:
         extended_wrapper = build_extended_wrapper(wrapper_text, target, n, n_values=None)
 
         # --- 5. Build sync + main ---
-        sync_main = build_sync_module(target, n)
+        sync_main = build_sync_module(target, n, properties=self.fault_model.properties)
 
         # --- 6. Assemble final file ---
         # Strip MODULE main from nominal content — Sync provides the only main.

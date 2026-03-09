@@ -122,4 +122,4 @@ MODULE main
 VAR
     nominal  : NominalR();
 
--- NuSMV  UNRC/tesis/double-modular-generator/script/new/R_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
+-- NuSMV  UNRC/tesis/double-modular-generator/script/R_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
