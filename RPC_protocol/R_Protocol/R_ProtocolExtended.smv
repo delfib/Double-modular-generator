@@ -1,42 +1,28 @@
 -- =========================================================
---  Extended R Protocol with Independent Failure Counters
--- =========================================================
--- This model is an extension of the nominal R Protocol to include
--- fault-tolerant behavior using independent counters for each server.
---
--- Each extended server has its own counter, initialized to a fixed
--- value N. On each execution step of the server, the counter
--- decrements by 1. When the counter reaches zero, the corresponding
--- server transitions to the 'failed' state.
--- =========================================================
-
--- =========================================================
 -- Extended Queue (handles 2 servers)
 -- =========================================================
-MODULE QueueExtended(Q_SIZE, client_toggle, server1_toggle, server2_toggle)
+MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles, N_SERVERS)
 VAR
-    head : 0..3;
-    tail : 0..3;
+    head               : 0..3;
+    tail               : 0..3;
     last_client_toggle : boolean;
-    last_server1_toggle : boolean;
-    last_server2_toggle : boolean;
+    last_server_toggle : array 0..1 of boolean;
 
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
     init(last_client_toggle) := FALSE;
-    init(last_server1_toggle) := FALSE;
-    init(last_server2_toggle) := FALSE;
+    init(last_server_toggle[0]) := FALSE;
+    init(last_server_toggle[1]) := FALSE;
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
 
-    -- Head advances if EITHER server consumes (toggle changed)
     next(head) := case
-        (server1_toggle != last_server1_toggle) : (head + 1) mod Q_SIZE;
-        (server2_toggle != last_server2_toggle) : (head + 1) mod Q_SIZE;
+        (server_toggles[0] != last_server_toggle[0]) : (head + 1) mod Q_SIZE;
+        (server_toggles[1] != last_server_toggle[1]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
@@ -45,18 +31,18 @@ ASSIGN
         TRUE : last_client_toggle;
     esac;
 
-    next(last_server1_toggle) := case
-        (server1_toggle != last_server1_toggle) : server1_toggle;
-        TRUE : last_server1_toggle;
+    next(last_server_toggle[0]) := case
+        (server_toggles[0] != last_server_toggle[0]) : server_toggles[0];
+        TRUE : last_server_toggle[0];
     esac;
 
-    next(last_server2_toggle) := case
-        (server2_toggle != last_server2_toggle) : server2_toggle;
-        TRUE : last_server2_toggle;
+    next(last_server_toggle[1]) := case
+        (server_toggles[1] != last_server_toggle[1]) : server_toggles[1];
+        TRUE : last_server_toggle[1];
     esac;
 
 DEFINE
-    full := ((tail + 1) mod Q_SIZE = head);
+    full  := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 FAIRNESS
@@ -96,36 +82,25 @@ FAIRNESS
 -- =========================================================
 -- Server module 
 -- =========================================================
-MODULE ServerExtended(queue, N, last_queue_toggle)
+MODULE ServerExtended(queue, server_id)
 VAR
-    server_state : {receiving, received, failed};
-    request_toggle : boolean;  
-    counter : 0..N;
+    server_state : {receiving, received};
+    request_toggle : boolean;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(counter) := N;
 
-    next(counter) :=
-        case
-            server_state != failed & counter > 0 : counter - 1;
-            TRUE : counter;
-        esac;
-        
-    next(server_state) :=
-        case
-            counter = 0 : {failed, server_state};
-            server_state = receiving & queue.empty : receiving;
-            server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = last_queue_toggle: receiving;
-            server_state = received & queue.empty : received;
-            server_state = failed : failed;
-            TRUE : server_state;
-        esac;
+    next(server_state) := case
+        server_state = receiving & queue.empty : receiving;
+        server_state = receiving & !queue.empty : received;
+        server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id] : receiving;
+        server_state = received & queue.empty : received;
+        TRUE : server_state;
+    esac;
 
     next(request_toggle) := case
-        server_state = receiving & !queue.empty : !request_toggle;                   
-        TRUE : request_toggle;                                                    
+        server_state = receiving & !queue.empty : !request_toggle;
+        TRUE : request_toggle;
     esac;
 
 FAIRNESS
@@ -134,23 +109,28 @@ FAIRNESS
 
 
 -- =========================================================
--- Extended model wrapper (2 servers with counters)
+-- Extended model wrapper
 -- =========================================================
 MODULE ExtendedR()
 DEFINE
     Q_SIZE := 4;
-    N1 := 5;  
-    N2 := 7;  
-
 VAR
-    client : process Client(queue);
-    server1 : process ServerExtended(queue, N1, queue.last_server1_toggle);
-    server2 : process ServerExtended(queue, N2, queue.last_server2_toggle);
-    queue : process QueueExtended(Q_SIZE, 
-                                  client.request_toggle, 
-                                  server1.request_toggle, 
-                                  server2.request_toggle);
-        
+    server_toggles : array 0..1 of boolean;
+
+    client  : process Client(queue);
+    server1 : process ServerExtended(queue, 0);
+    server2 : process ServerExtended(queue, 1);
+
+    queue   : process QueueExtended(Q_SIZE,
+                                    client.request_toggle,
+                                    server_toggles,
+                                    2);
+
+ASSIGN
+    server_toggles[0] := server1.request_toggle;
+    server_toggles[1] := server2.request_toggle;
+
+
 -- =========================================================
 -- Main module
 -- =========================================================
@@ -179,42 +159,14 @@ SPEC AG (extended.queue.full <-> ((extended.queue.tail + 1) mod extended.Q_SIZE 
 -- Queue empty definition is correct
 SPEC AG (extended.queue.empty <-> (extended.queue.tail = extended.queue.head))
 
--- Server counters are always within bounds
-SPEC AG (extended.server1.counter >= 0 & extended.server1.counter <= extended.N1)
-SPEC AG (extended.server2.counter >= 0 & extended.server2.counter <= extended.N2)
-
--- Once a server fails, it stays failed
-SPEC AG (extended.server1.server_state = failed -> AG extended.server1.server_state = failed)
-SPEC AG (extended.server2.server_state = failed -> AG extended.server2.server_state = failed)
-
--- Counter only decreases or stays the same 
-SPEC AG (extended.server1.server_state != failed -> 
-         AX (extended.server1.counter <= extended.server1.counter | extended.server1.server_state = failed))
-SPEC AG (extended.server2.server_state != failed -> 
-         AX (extended.server2.counter <= extended.server2.counter | extended.server2.server_state = failed))
-
--- Failed servers don't consume
-SPEC AG (extended.server1.server_state = failed -> !(extended.server1.server_state = received))
-SPEC AG (extended.server2.server_state = failed -> !(extended.server2.server_state = received))
-
-
 -- LIVENESS PROPERTIES
 -- ===================
 
 -- If client wants to send, it will eventually send (no starvation)
 SPEC AG (extended.client.client_state = sending -> AF extended.client.client_state = sent)
 
--- If client wants to send and at least one server works, client eventually sends
-SPEC AG ((extended.client.client_state = sending & 
-          (extended.server1.server_state != failed | extended.server2.server_state != failed)) -> 
-         AF extended.client.client_state = sent)
-
 -- Queue never stays empty forever 
 SPEC AG (extended.queue.empty -> AF !extended.queue.empty)
-
--- If at least one server is working, client produces infinitely often
-SPEC AG ((extended.server1.server_state != failed | extended.server2.server_state != failed) -> 
-         AG (AF extended.client.client_state = sent))
 
 -- FUNCTIONAL CORRECTNESS
 -- ======================
@@ -222,14 +174,6 @@ SPEC AG ((extended.server1.server_state != failed | extended.server2.server_stat
 -- Client only transitions from sending to sent when queue is not full
 SPEC AG ((extended.client.client_state = sending & 
           AX extended.client.client_state = sent) -> !extended.queue.full)
-
--- Servers only transition from receiving to received when queue is not empty and not failed
-SPEC AG ((extended.server1.server_state = receiving & 
-          AX extended.server1.server_state = received) -> 
-         (!extended.queue.empty & extended.server1.server_state != failed))
-SPEC AG ((extended.server2.server_state = receiving & 
-          AX extended.server2.server_state = received) -> 
-         (!extended.queue.empty & extended.server2.server_state != failed))
 
 
 -- TOGGLE SYNCHRONIZATION
@@ -246,12 +190,15 @@ SPEC AG ((extended.client.client_state = sent &
 
 -- Queue tracks server toggles after consumption
 SPEC AG ((extended.server1.server_state = received & 
-          extended.server1.request_toggle != extended.queue.last_server1_toggle) ->
-         AF extended.queue.last_server1_toggle = extended.server1.request_toggle)
+          extended.server1.request_toggle != extended.queue.last_server_toggle[0]) ->
+         AF extended.queue.last_server_toggle[0] = extended.server1.request_toggle)
 SPEC AG ((extended.server2.server_state = received & 
-          extended.server2.request_toggle != extended.queue.last_server2_toggle) ->
-         AF extended.queue.last_server2_toggle = extended.server2.request_toggle)
+          extended.server2.request_toggle != extended.queue.last_server_toggle[1]) ->
+         AF extended.queue.last_server_toggle[1] = extended.server2.request_toggle)
 
+-- server_toggles array always mirrors the real values
+SPEC AG (extended.server_toggles[0] = extended.server1.request_toggle)
+SPEC AG (extended.server_toggles[1] = extended.server2.request_toggle)
 
 -- REACHABILITY PROPERTIES
 -- =======================
@@ -265,33 +212,19 @@ SPEC EF extended.queue.empty
 -- It's possible to reach a non-empty and non-full queue
 SPEC EF (!extended.queue.empty & !extended.queue.full)
 
--- It's possible for server1 to fail
-SPEC EF extended.server1.server_state = failed
-
--- It's possible for server2 to fail
-SPEC EF extended.server2.server_state = failed
-
--- It's possible for both servers to fail
-SPEC EF (extended.server1.server_state = failed & extended.server2.server_state = failed)
-
--- It's possible for only one server to fail while the other works
-SPEC EF (extended.server1.server_state = failed & extended.server2.server_state != failed)
-SPEC EF (extended.server2.server_state = failed & extended.server1.server_state != failed)
-
-
 -- If a server toggles its bit (signals consumption), the queue MUST eventually process it
-SPEC AG ((extended.server1.request_toggle != extended.queue.last_server1_toggle) -> 
-         AF (extended.queue.last_server1_toggle = extended.server1.request_toggle))
+SPEC AG ((extended.server1.request_toggle != extended.queue.last_server_toggle[0]) -> 
+         AF (extended.queue.last_server_toggle[0] = extended.server1.request_toggle))
 
-SPEC AG ((extended.server2.request_toggle != extended.queue.last_server2_toggle) -> 
-         AF (extended.queue.last_server2_toggle = extended.server2.request_toggle))
+SPEC AG ((extended.server2.request_toggle != extended.queue.last_server_toggle[1]) -> 
+         AF (extended.queue.last_server_toggle[1] = extended.server2.request_toggle))
 
 -- If a server enters 'received' state, the queue head must eventually advance
 SPEC AG ((extended.server1.server_state = received) -> 
-         AF (extended.server1.request_toggle = extended.queue.last_server1_toggle))
+         AF (extended.server1.request_toggle = extended.queue.last_server_toggle[0]))
          
 SPEC AG ((extended.server2.server_state = received) -> 
-         AF (extended.server2.request_toggle = extended.queue.last_server2_toggle))
+         AF (extended.server2.request_toggle = extended.queue.last_server_toggle[1]))
 
 
 -- MUTUAL EXCLUSION (only one server consumes at a time)
@@ -300,15 +233,15 @@ SPEC AG ((extended.server2.server_state = received) ->
 -- Both servers don't consume simultaneously (queue head advances by 1 max)
 DEFINE q :=
    !((extended.server1.server_state = received &
-      extended.server1.request_toggle != extended.queue.last_server1_toggle) &
+      extended.server1.request_toggle != extended.queue.last_server_toggle[0]) &
      (extended.server2.server_state = received &
-      extended.server2.request_toggle != extended.queue.last_server2_toggle));
+      extended.server2.request_toggle != extended.queue.last_server_toggle[1]));
 
 -- If a server reaches received AND in the next step the queue consumes, then q must hold.
 SPEC AG (
     (
       extended.server1.server_state = received 
-      & AX (extended.server1.request_toggle = extended.queue.last_server1_toggle)
+      & AX (extended.server1.request_toggle = extended.queue.last_server_toggle[0])
     )
     -> q
 )
@@ -316,7 +249,9 @@ SPEC AG (
 SPEC AG (
     (
       extended.server2.server_state = received 
-      & AX (extended.server2.request_toggle = extended.queue.last_server2_toggle)
+      & AX (extended.server2.request_toggle = extended.queue.last_server_toggle[1])
     )
     -> q
 )
+
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/R_Protocol/R_ProtocolExtended.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

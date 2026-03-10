@@ -118,20 +118,19 @@ VAR
 -- =========================================================
 -- Extended Queue (handles 2 servers)
 -- =========================================================
-MODULE QueueExtended(Q_SIZE, client_toggle, server1_toggle, server2_toggle)
+MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles, N_SERVERS)
 VAR
-    head : 0..3;
-    tail : 0..3;
+    head               : 0..3;
+    tail               : 0..3;
     last_client_toggle : boolean;
-    last_server1_toggle : boolean;
-    last_server2_toggle : boolean;
+    last_server_toggle : array 0..1 of boolean;
 
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
     init(last_client_toggle) := FALSE;
-    init(last_server1_toggle) := FALSE;
-    init(last_server2_toggle) := FALSE;
+    init(last_server_toggle[0]) := FALSE;
+    init(last_server_toggle[1]) := FALSE;
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;
@@ -139,8 +138,8 @@ ASSIGN
     esac;
 
     next(head) := case
-        (server1_toggle != last_server1_toggle) : (head + 1) mod Q_SIZE;
-        (server2_toggle != last_server2_toggle) : (head + 1) mod Q_SIZE;
+        (server_toggles[0] != last_server_toggle[0]) : (head + 1) mod Q_SIZE;
+        (server_toggles[1] != last_server_toggle[1]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
@@ -149,18 +148,18 @@ ASSIGN
         TRUE : last_client_toggle;
     esac;
 
-    next(last_server1_toggle) := case
-        (server1_toggle != last_server1_toggle) : server1_toggle;
-        TRUE : last_server1_toggle;
+    next(last_server_toggle[0]) := case
+        (server_toggles[0] != last_server_toggle[0]) : server_toggles[0];
+        TRUE : last_server_toggle[0];
     esac;
 
-    next(last_server2_toggle) := case
-        (server2_toggle != last_server2_toggle) : server2_toggle;
-        TRUE : last_server2_toggle;
+    next(last_server_toggle[1]) := case
+        (server_toggles[1] != last_server_toggle[1]) : server_toggles[1];
+        TRUE : last_server_toggle[1];
     esac;
 
 DEFINE
-    full := ((tail + 1) mod Q_SIZE = head);
+    full  := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 FAIRNESS
@@ -170,41 +169,29 @@ FAIRNESS
 -- =========================================================
 -- Extended Server module 
 -- =========================================================
-MODULE ServerExtended(queue, N, last_queue_toggle)
+MODULE ServerExtended(queue, server_id)
 VAR
-    server_state : {receiving, received, failed};
-    request_toggle : boolean;  
-    counter : 0..N;
+    server_state : {receiving, received};
+    request_toggle : boolean;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(counter) := N;
 
-    next(counter) :=
-        case
-            server_state != failed & counter > 0 : counter - 1;
-            TRUE : counter;
-        esac;
-        
-    next(server_state) :=
-        case
-            counter = 0 : {failed, server_state};
-            server_state = receiving & queue.empty : receiving;
-            server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = last_queue_toggle: receiving;
-            server_state = received & queue.empty : received;
-            server_state = failed : failed;
-            TRUE : server_state;
-        esac;
+    next(server_state) := case
+        server_state = receiving & queue.empty : receiving;
+        server_state = receiving & !queue.empty : received;
+        server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id] : receiving;
+        server_state = received & queue.empty : received;
+        TRUE : server_state;
+    esac;
 
     next(request_toggle) := case
-        server_state = receiving & !queue.empty : !request_toggle;                   
-        TRUE : request_toggle;                                                    
+        server_state = receiving & !queue.empty : !request_toggle;
+        TRUE : request_toggle;
     esac;
 
 FAIRNESS
     running
-
 
 
 -- =========================================================
@@ -213,17 +200,21 @@ FAIRNESS
 MODULE ExtendedR()
 DEFINE
     Q_SIZE := 4;
-    N1 := 5;  
-    N2 := 7;  
-
 VAR
-    client : process Client(queue);
-    server1 : process ServerExtended(queue, N1, queue.last_server1_toggle);
-    server2 : process ServerExtended(queue, N2, queue.last_server2_toggle);
-    queue : process QueueExtended(Q_SIZE, 
-                                  client.request_toggle, 
-                                  server1.request_toggle, 
-                                  server2.request_toggle);
+    server_toggles : array 0..1 of boolean;
+
+    client  : process Client(queue);
+    server1 : process ServerExtended(queue, 0);
+    server2 : process ServerExtended(queue, 1);
+
+    queue   : process QueueExtended(Q_SIZE,
+                                    client.request_toggle,
+                                    server_toggles,
+                                    2);
+
+ASSIGN
+    server_toggles[0] := server1.request_toggle;
+    server_toggles[1] := server2.request_toggle;
 
 
 -- =========================================================
@@ -237,10 +228,7 @@ VAR
 
 -- Whenever nominal server consumes, eventually an extended server consumes
 SPEC AG (
-    (nominal.server.server_state = received 
-     & (extended.server1.server_state != failed 
-        | extended.server2.server_state != failed))
-    ->
+    nominal.server.server_state = received ->
     AF (extended.server1.server_state = received 
         | extended.server2.server_state = received)
 )
@@ -254,3 +242,4 @@ MODULE main
 VAR
     sync : Sync();
 
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/R_Protocol/Sync2.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

@@ -19,6 +19,12 @@
             <variable>server_state</variable>
             <value>received</value>
         </fault>
+        <!--
+        <fault id="byzantine_state">
+            <type>byzantine</type>
+            <variable>server_state</variable>
+        </fault>
+         -->
     </faults>
 
     <properties>

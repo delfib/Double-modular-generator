@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 
 class Fault:
-    def __init__(self, type, variable, value):
+    def __init__(self, type, variable, value=None):
         self.type = type
         self.variable = variable
         self.value = value
@@ -31,7 +31,8 @@ class FaultModel:
             f"FaultInjectionSpec(model_file={self.model_file}, "
             f"target_module={self.target_module}, "
             f"redundancy={self.redundancy}, "
-            f"faults={self.faults})"
+            f"faults={self.faults}, "
+            f"properties={self.properties})"
         )
 
 
@@ -55,21 +56,34 @@ def parse_fault_model(xml_path):
     redundancy = 1
     redundancy_elem = root.find("redundancy")
     if redundancy_elem is not None:
-        redundancy = int(redundancy_elem.attrib.get("count", "1"))  # give me the value of count or 1 if it doesn't exist 
+        redundancy = int(redundancy_elem.attrib.get("count", "1"))
 
     # <faults>
     faults = []
     faults_elem = root.find("faults")
     if faults_elem is not None:
         for f in faults_elem.findall("fault"):
-            type = f.findtext("type")
-            variable = f.findtext("variable")
-            value = f.findtext("value")
+            fault_id = f.attrib.get("id", "")
+            fault_type = f.findtext("type")
+            variable   = f.findtext("variable")
+            value      = f.findtext("value")
 
-            if variable is None or value is None or type is None:
-                raise ValueError("Each <fault> needs <type>, <variable> and <value>")
+            if fault_type is None or variable is None:
+                raise ValueError(f"Fault '{fault_id}' needs at least <type> and <variable>")
 
-            faults.append(Fault(type.strip(), variable.strip(), value.strip()))
+            fault_type = fault_type.strip()
+            variable   = variable.strip()
+
+            if fault_type == "stuck-at":
+                if value is None:
+                    raise ValueError(f"Stuck-at fault '{fault_id}' requires <value>")
+                faults.append(Fault(fault_type, variable, value.strip()))
+
+            elif fault_type == "byzantine":
+                faults.append(Fault(fault_type, variable, value.strip() if value else None))
+
+            else:
+                raise ValueError(f"Unknown fault type '{fault_type}' in fault '{fault_id}'")
 
     # <properties>
     properties = []
@@ -78,7 +92,7 @@ def parse_fault_model(xml_path):
         for p in properties_elem.findall("property"):
             prop_id = p.attrib.get("id", "")
             comment = p.findtext("comment", default="").strip()
-            spec = p.findtext("spec")
+            spec    = p.findtext("spec")
             if spec is None:
                 raise ValueError(f"Property '{prop_id}' is missing <spec>")
             properties.append(Property(prop_id, comment, spec.strip()))
@@ -89,5 +103,5 @@ def parse_fault_model(xml_path):
         target_module=target_module,
         redundancy=redundancy,
         faults=faults,
-        properties=properties
+        properties=properties,
     )
