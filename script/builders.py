@@ -73,7 +73,7 @@ def build_extended_queue(queue_text, redundancy):
 # ---------------------------------------------------------------------------
 def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, n_values):
     """
-    Clone the NominalR wrapper, rename it to ExtendedR, and replace the single
+    Clone the Nominal wrapper, rename it to Extended, and replace the single
     server instance with `redundancy` ServerExtended instances plus the shared
     server_toggles array.
     """
@@ -85,7 +85,7 @@ def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, n_va
         text = text[:last_semi + 1] + '\n'
 
     # Rename wrapper module
-    text = re.sub(r'MODULE\s+NominalR\s*\(\)', 'MODULE ExtendedR()', text)
+    text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
 
     # Add N-value DEFINEs if provided (used for parameterised N-modular redundancy)
     if n_values:
@@ -182,8 +182,8 @@ def build_sync_module(target_module, redundancy, properties=None):
         f"-- =========================================================\n"
         f"MODULE Sync()\n"
         f"VAR\n"
-        f"    nominal  : NominalR();\n"
-        f"    extended : ExtendedR();\n"
+        f"    nominal  : Nominal();\n"
+        f"    extended : Extended();\n"
         f"{properties_block}\n"
         f"\n"
         f"-- =========================================================\n"

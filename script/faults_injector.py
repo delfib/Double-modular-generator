@@ -60,7 +60,7 @@ class FaultInjectionEngine:
         # --- 1. Extract original modules ---
         server_text  = get_module_text(smv_content, target)
         queue_text   = get_module_text(smv_content, 'Queue')
-        wrapper_text = get_module_text(smv_content, 'NominalR')
+        wrapper_text = get_module_text(smv_content, 'Nominal')
 
         # --- 2. Build extended (faulted) server ---
         extended_server = self.injector.build_extended_module(

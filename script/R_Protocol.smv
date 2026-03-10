@@ -106,7 +106,7 @@ FAIRNESS
 -- =========================================================
 -- Nominal wrapper
 -- =========================================================
-MODULE NominalR()
+MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
@@ -120,6 +120,6 @@ VAR
 -- =========================================================
 MODULE main
 VAR
-    nominal  : NominalR();
+    nominal  : Nominal();
 
 -- NuSMV  UNRC/tesis/double-modular-generator/script/R_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
