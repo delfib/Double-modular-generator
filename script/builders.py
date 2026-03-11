@@ -19,7 +19,7 @@ def build_extended_queue(queue_text, redundancy):
         text
     )
 
-    n           = redundancy
+    n = redundancy
     array_bound = f"0..{n - 1}"
 
     # Replace last_server_toggle boolean VAR with an array
@@ -67,11 +67,13 @@ def build_extended_queue(queue_text, redundancy):
     )
 
     return text
+# ?? aca tendria que crear dos colas para el RR, no una como para el R, encima dos colas diferentes. 
+
 
 # ---------------------------------------------------------------------------
 # Extended Wrapper builder
 # ---------------------------------------------------------------------------
-def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, n_values):
+def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy):
     """
     Clone the Nominal wrapper, rename it to Extended, and replace the single
     server instance with `redundancy` ServerExtended instances plus the shared
@@ -87,68 +89,64 @@ def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, n_va
     # Rename wrapper module
     text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
 
-    # Add N-value DEFINEs if provided (used for parameterised N-modular redundancy)
-    if n_values:
-        define_lines = '\n'.join(
-            f'    N{i+1} := {n_values[i]};' for i in range(redundancy)
-        )
-        text = re.sub(r'(DEFINE\s*\n)', r'\1' + define_lines + '\n', text)
-
-    # Locate the original server instance line  e.g. "    server : process Server(queue);"
+    # Locate the original server instance line
     server_pattern = rf'(\s*)(\w+)\s*:\s*process\s+{re.escape(target_module)}\(([^)]*)\);'
     match = re.search(server_pattern, text)
     if not match:
         raise ValueError(f"Could not find instance of {target_module} in wrapper")
 
     indent = match.group(1)
-    params = match.group(3)  # e.g. "queue"
+    params = match.group(3)
 
-    # Build one ServerExtended instance per redundancy slot
+    # Build ServerExtended instances
     server_lines = []
     for i in range(1, redundancy + 1):
-        if n_values:
-            server_lines.append(
-                f"{indent}server{i} : process ServerExtended({params}, {i-1}, N{i});"
-            )
-        else:
-            server_lines.append(
-                f"{indent}server{i} : process ServerExtended({params}, {i-1});"
-            )
+        server_lines.append(
+            f"{indent}server{i} : process ServerExtended({params}, {i-1});"
+        )
 
     # Declare the server_toggles bridge array
     bridge_lines = [
         f"{indent}server_toggles : array 0..{redundancy-1} of boolean;"
     ]
 
-    # Locate the Queue instance and replace it with QueueExtended(server_toggles)
+    # Locate the Queue instance
     queue_pattern = r'(\s*)(\w+)\s*:\s*process\s+Queue\(([^)]*)\);'
-    queue_match   = re.search(queue_pattern, text)
+    queue_match = re.search(queue_pattern, text)
     if not queue_match:
         raise ValueError("Could not find Queue instance in wrapper")
 
-    q_indent     = queue_match.group(1)
-    q_params     = queue_match.group(3)
+    q_indent = queue_match.group(1)
+    q_params = queue_match.group(3)
+
     q_param_list = [p.strip() for p in q_params.split(',')]
-    q_param_list[-1] = 'server_toggles'   # replace single toggle with array
+    q_param_list[-1] = 'server_toggles'
+
     new_queue_line = (
         f"{q_indent}queue : process QueueExtended("
         + ', '.join(q_param_list)
         + ");"
     )
 
-    # Build the ASSIGN block that wires each server's toggle into the array
+    # ??: tendria que separar para los casos para crear las colas, porque aca deberia buscar por request_queue
+    # o ack_queue, no solo para queue.
+
+    # Build ASSIGN block wiring server toggles
     assign_lines = '\n'.join(
         f"    server_toggles[{i}] := server{i+1}.request_toggle;"
         for i in range(redundancy)
     )
+
     assign_block = f"\nASSIGN\n{assign_lines}\n"
 
-    # Apply substitutions to the module text
+    # Replace the original server with the new server block
     new_server_block = '\n'.join(bridge_lines + server_lines)
     text = text[:match.start()] + new_server_block + text[match.end():]
+
+    # Replace Queue with QueueExtended
     text = re.sub(queue_pattern, new_queue_line, text)
 
-    # Append ASSIGN block if not already present
+    # Add ASSIGN block if needed
     if 'ASSIGN' not in text:
         text = text.rstrip() + '\n' + assign_block + '\n'
     else:

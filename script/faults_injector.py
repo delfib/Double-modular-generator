@@ -71,7 +71,7 @@ class FaultInjectionEngine:
         extended_queue = build_extended_queue(queue_text, n)
 
         # --- 4. Build extended wrapper ---
-        extended_wrapper = build_extended_wrapper(wrapper_text, target, n, n_values=None)
+        extended_wrapper = build_extended_wrapper(wrapper_text, target, n)
 
         # --- 5. Build Sync + main (with properties) ---
         sync_main = build_sync_module(target, n, properties=self.fault_model.properties)
