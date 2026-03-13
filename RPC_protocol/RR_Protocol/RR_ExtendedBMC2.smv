@@ -1,0 +1,393 @@
+-- =========================================================
+-- Queue: unified module with array toggles on both sides.
+-- For a single-producer queue, pass producer_toggles[1] := FALSE (never toggles).
+-- For a single-consumer queue, pass consumer_toggles[1] := FALSE (never toggles).
+-- =========================================================
+MODULE Queue(Q_SIZE, producer_toggles, consumer_toggles)
+VAR
+    head                 : 0..3;
+    tail                 : 0..3;
+    last_producer_toggle : array 0..1 of boolean;
+    last_consumer_toggle : array 0..1 of boolean;
+
+ASSIGN
+    init(head)                    := 0;
+    init(tail)                    := 0;
+    init(last_producer_toggle[0]) := FALSE;
+    init(last_producer_toggle[1]) := FALSE;
+    init(last_consumer_toggle[0]) := FALSE;
+    init(last_consumer_toggle[1]) := FALSE;
+
+    next(tail) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
+        TRUE : tail;
+    esac;
+
+    next(head) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[1] != last_consumer_toggle[1]) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+    next(last_producer_toggle[0]) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
+        TRUE : last_producer_toggle[0];
+    esac;
+
+    next(last_producer_toggle[1]) := case
+        (producer_toggles[1] != last_producer_toggle[1]) : producer_toggles[1];
+        TRUE : last_producer_toggle[1];
+    esac;
+
+    next(last_consumer_toggle[0]) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
+        TRUE : last_consumer_toggle[0];
+    esac;
+
+    next(last_consumer_toggle[1]) := case
+        (consumer_toggles[1] != last_consumer_toggle[1]) : consumer_toggles[1];
+        TRUE : last_consumer_toggle[1];
+    esac;
+
+DEFINE
+    full  := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Client module
+-- =========================================================
+MODULE Client(request_queue, ack_queue)
+VAR
+    client_request_state : {sending, sent};
+    client_ack_state     : {receiving, received};
+    request_toggle       : boolean;
+    ack_toggle           : boolean;
+    ack_received         : boolean;
+
+ASSIGN
+    init(client_request_state) := sending;
+    init(client_ack_state)     := receiving;
+    init(request_toggle)       := FALSE;
+    init(ack_toggle)           := FALSE;
+    init(ack_received)         := TRUE;
+
+    next(client_request_state) := case
+        client_request_state = sending & request_queue.full                                                        : sending;
+        client_request_state = sending & !request_queue.full & ack_received                                       : sent;
+        client_request_state = sent & !request_queue.full & request_toggle = request_queue.last_producer_toggle[0] : sending;
+        client_request_state = sent & request_queue.full                                                          : sent;
+        TRUE : client_request_state;
+    esac;
+
+    next(client_ack_state) := case
+        client_ack_state = receiving & ack_queue.empty                                               : receiving;
+        client_ack_state = receiving & !ack_queue.empty                                              : received;
+        client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle[0] : receiving;
+        client_ack_state = received & ack_queue.empty                                                : received;
+        TRUE : client_ack_state;
+    esac;
+
+    next(request_toggle) := case
+        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;
+        TRUE : request_toggle;
+    esac;
+
+    next(ack_toggle) := case
+        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;
+        TRUE : ack_toggle;
+    esac;
+
+    next(ack_received) := case
+        client_request_state = sending & !request_queue.full & ack_received : FALSE;    -- false because a new request has just been sent
+        client_ack_state = receiving & !ack_queue.empty                     : TRUE;      -- true because a new ack has been received
+        TRUE : ack_received;
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Server module
+-- server_id: 0 or 1, selects the right array slot in each queue
+-- =========================================================
+MODULE Server(request_queue, ack_queue, server_id)
+VAR
+    server_request_state : {receiving, received};
+    server_ack_state     : {sending, sent};
+    request_toggle       : boolean;
+    ack_toggle           : boolean;
+    request_received     : boolean;
+
+ASSIGN
+    init(server_request_state) := receiving;
+    init(server_ack_state)     := sending;
+    init(request_toggle)       := FALSE;
+    init(ack_toggle)           := FALSE;
+    init(request_received)     := FALSE;
+
+    next(server_request_state) := case
+        server_request_state = receiving & request_queue.empty  : receiving;
+        server_request_state = receiving & !request_queue.empty : received;
+        server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[server_id] : receiving;
+        server_request_state = received & request_queue.empty : received;
+        TRUE : server_request_state;
+    esac;
+
+    next(server_ack_state) := case
+        server_ack_state = sending & ack_queue.full                     : sending;
+        server_ack_state = sending & !ack_queue.full & request_received : sent;
+        server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[server_id] : sending;
+        server_ack_state = sent & ack_queue.full : sent;
+        TRUE : server_ack_state;
+    esac;
+
+    next(request_toggle) := case
+        server_request_state = receiving & !request_queue.empty         : !request_toggle;
+        TRUE : request_toggle;
+    esac;
+
+    next(ack_toggle) := case
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
+        TRUE : ack_toggle;
+    esac;
+
+    next(request_received) := case
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;
+        server_request_state = receiving & !request_queue.empty         : TRUE;
+        TRUE : request_received;
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- System wrapper
+--
+-- request_queue: 1 producer (client), 2 consumers (server1, server2)
+--   producer_toggles[0] = client.request_toggle  (active)
+--   producer_toggles[1] = FALSE                  (dummy, never toggles)
+--
+-- ack_queue: 2 producers (server1, server2), 1 consumer (client)
+--   consumer_toggles[0] = client.ack_toggle       (active)
+--   consumer_toggles[1] = FALSE                   (dummy, never toggles)
+-- =========================================================
+MODULE ExtendedRR()
+DEFINE
+    Q_SIZE := 4;
+
+VAR
+    -- dummy constant arrays to hold the inactive slots
+    dummy_producer : boolean;   -- always FALSE, never assigned
+    dummy_consumer : boolean;   -- always FALSE, never assigned
+
+    request_prod_toggles : array 0..1 of boolean;
+    request_cons_toggles : array 0..1 of boolean;
+    ack_prod_toggles     : array 0..1 of boolean;
+    ack_cons_toggles     : array 0..1 of boolean;
+
+    client  : process Client(request_queue, ack_queue);
+    server1 : process Server(request_queue, ack_queue, 0);
+    server2 : process Server(request_queue, ack_queue, 1);
+
+    request_queue : process Queue(Q_SIZE, request_prod_toggles, request_cons_toggles);
+    ack_queue     : process Queue(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+
+ASSIGN
+    -- request_queue: single producer (client), two consumers (server1, server2)
+    request_prod_toggles[0] := client.request_toggle;
+    request_prod_toggles[1] := FALSE;   -- dummy, stays FALSE forever
+    request_cons_toggles[0] := server1.request_toggle;
+    request_cons_toggles[1] := server2.request_toggle;
+
+    -- ack_queue: two producers (server1, server2), single consumer (client)
+    ack_prod_toggles[0] := server1.ack_toggle;
+    ack_prod_toggles[1] := server2.ack_toggle;
+    ack_cons_toggles[0] := client.ack_toggle;
+    ack_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
+
+
+-- =========================================================
+-- Main module
+-- =========================================================
+MODULE main
+VAR
+    extended : ExtendedRR();
+
+
+
+-- SAFETY PROPERTIES
+-- =================
+-- Queues tail and head are always within bounds
+LTLSPEC G (extended.request_queue.head >= 0 & extended.request_queue.head < extended.Q_SIZE)
+LTLSPEC G (extended.request_queue.tail >= 0 & extended.request_queue.tail < extended.Q_SIZE)
+
+LTLSPEC G (extended.ack_queue.head >= 0 & extended.ack_queue.head < extended.Q_SIZE)
+LTLSPEC G (extended.ack_queue.tail >= 0 & extended.ack_queue.tail < extended.Q_SIZE)
+
+-- Full and empty are mutually exclusive
+LTLSPEC G !(extended.request_queue.full & extended.request_queue.empty)
+LTLSPEC G !(extended.ack_queue.full & extended.ack_queue.empty)
+
+-- Queues definitions are correct
+LTLSPEC G (extended.request_queue.full <-> ((extended.request_queue.tail + 1) mod extended.Q_SIZE = extended.request_queue.head))
+LTLSPEC G (extended.request_queue.empty <-> (extended.request_queue.tail = extended.request_queue.head))
+LTLSPEC G (extended.ack_queue.full <-> ((extended.ack_queue.tail + 1) mod extended.Q_SIZE = extended.ack_queue.head))
+LTLSPEC G (extended.ack_queue.empty <-> (extended.ack_queue.tail = extended.ack_queue.head))
+
+
+-- LIVENESS PROPERTIES
+-- ===================
+
+-- System never deadlocks - queues always eventually reach a non-full, non-empty state
+LTLSPEC G (extended.request_queue.empty -> F !extended.request_queue.empty)
+LTLSPEC G (extended.ack_queue.empty -> F !extended.ack_queue.empty)
+
+-- If client wants to send/receive, it eventually does (no starvation)
+LTLSPEC G (extended.client.client_request_state = sending -> F extended.client.client_request_state = sent)
+LTLSPEC G (extended.client.client_ack_state = receiving -> F extended.client.client_ack_state = received)
+
+-- If server wants to receive/send, it eventually does (no starvation)
+LTLSPEC G (extended.server1.server_request_state = receiving -> F extended.server1.server_request_state = received)
+LTLSPEC G (extended.server2.server_request_state = receiving -> F extended.server2.server_request_state = received)
+LTLSPEC G (extended.server1.server_ack_state = sending -> F extended.server1.server_ack_state = sent)
+LTLSPEC G (extended.server2.server_ack_state = sending -> F extended.server2.server_ack_state = sent)
+
+-- Queues never stay empty forever
+LTLSPEC G (extended.request_queue.empty -> F !extended.request_queue.empty)
+LTLSPEC G (extended.ack_queue.empty -> F !extended.ack_queue.empty)
+
+-- Client eventually produces and consumes infinitely often
+LTLSPEC G F (extended.client.client_request_state = sent)
+LTLSPEC G F (extended.client.client_ack_state = received)
+
+-- Server eventually consumes/produces infinitely often
+LTLSPEC G F (extended.server1.server_request_state = received)
+LTLSPEC G F (extended.server1.server_ack_state = sent)
+
+
+-- FUNCTIONAL CORRECTNESS
+-- ======================
+-- Every produced message is eventually consumed
+LTLSPEC G (extended.client.client_request_state = sent -> F extended.server1.server_request_state = received)
+LTLSPEC G (extended.server1.server_ack_state = sent -> F extended.client.client_ack_state = received)
+
+-- Client only transitions from sending to sent when queue is not full and an ack was received
+-- NOTE: AX becomes X in LTL
+LTLSPEC G ((extended.client.client_request_state = sending & X extended.client.client_request_state = sent) ->
+   (!extended.request_queue.full & extended.client.ack_received))
+
+-- Server only transitions from receiving to received when queue is not empty
+LTLSPEC G ((extended.server1.server_request_state = receiving & X extended.server1.server_request_state = received) ->
+    !extended.request_queue.empty)
+
+-- If the server enters 'received'/'sent' state, the queue head/tail must eventually advance
+LTLSPEC G (extended.server1.server_request_state = received -> F (extended.server1.request_toggle = extended.request_queue.last_consumer_toggle[0]))
+LTLSPEC G (extended.server1.server_ack_state = sent -> F (extended.server1.ack_toggle = extended.ack_queue.last_producer_toggle[0]))
+LTLSPEC G (extended.server2.server_request_state = received -> F (extended.server2.request_toggle = extended.request_queue.last_consumer_toggle[1]))
+LTLSPEC G (extended.server2.server_ack_state = sent -> F (extended.server2.ack_toggle = extended.ack_queue.last_producer_toggle[1]))
+
+-- If the client enters 'sent'/'received' state, the queue tail/head must eventually advance
+LTLSPEC G (extended.client.client_request_state = sent -> F (extended.client.request_toggle = extended.request_queue.last_producer_toggle[0]))
+LTLSPEC G (extended.client.client_ack_state = received -> F (extended.client.ack_toggle = extended.ack_queue.last_consumer_toggle[0]))
+
+-- Client cannot send two requests without receiving an ack in between
+LTLSPEC G (extended.client.client_request_state = sent -> F extended.client.ack_received)
+
+-- Server cannot send an ack unless it has received a request
+LTLSPEC G ((extended.server1.server_ack_state = sending & X extended.server1.server_ack_state = sent) ->
+    extended.server1.request_received)
+
+-- Client cannot receive an ack unless server sent one
+LTLSPEC G ((extended.client.client_ack_state = receiving & X extended.client.client_ack_state = received) ->
+    !extended.ack_queue.empty)
+
+-- Every received request eventually causes an ack to be sent
+LTLSPEC G (extended.server1.server_request_state = received -> F extended.server1.server_ack_state = sent)
+LTLSPEC G (extended.server2.server_request_state = received -> F extended.server2.server_ack_state = sent)
+
+-- Every sent request eventually results in the client receiving an ack
+LTLSPEC G (extended.client.client_request_state = sent -> F extended.client.client_ack_state = received)
+
+-- Any pending ack implies it will eventually be received
+LTLSPEC G (!extended.ack_queue.empty -> F extended.client.client_ack_state = received)
+
+-- Request queue never contains more than one element
+LTLSPEC G ((extended.request_queue.tail + 2) mod extended.Q_SIZE != extended.request_queue.head)
+
+-- Ack queue never contains more than one element
+LTLSPEC G ((extended.ack_queue.tail + 2) mod extended.Q_SIZE != extended.ack_queue.head)
+
+-- No ack is lost
+LTLSPEC G (extended.server1.server_ack_state = sent -> F extended.client.client_ack_state = received)
+
+
+-- TOGGLE SYNCHRONIZATION
+-- ======================
+
+-- Client request/ack toggle changes when producing/consuming
+LTLSPEC G ((extended.client.client_request_state = sending & !extended.request_queue.full & extended.client.ack_received) ->
+         F extended.client.request_toggle != extended.request_queue.last_producer_toggle[0])
+LTLSPEC G ((extended.client.client_ack_state = receiving & !extended.ack_queue.empty) ->
+         F extended.client.ack_toggle != extended.ack_queue.last_consumer_toggle[0])
+
+-- Server request/ack toggle changes when consuming/producing
+LTLSPEC G ((extended.server1.server_request_state = receiving & !extended.request_queue.empty) ->
+         F extended.server1.request_toggle != extended.request_queue.last_consumer_toggle[0])
+LTLSPEC G ((extended.server1.server_ack_state = sending & !extended.ack_queue.full & extended.server1.request_received) ->
+         F extended.server1.ack_toggle != extended.ack_queue.last_producer_toggle[0])
+
+-- Request Queue's last_producer_toggle tracks client's request_toggle after production
+LTLSPEC G ((extended.client.client_request_state = sent &
+          extended.client.request_toggle != extended.request_queue.last_producer_toggle[0]) ->
+         F extended.request_queue.last_producer_toggle[0] = extended.client.request_toggle)
+
+-- Request Queue's last_consumer_toggle tracks server's request_toggle after consumption
+LTLSPEC G ((extended.server1.server_request_state = received &
+          extended.server1.request_toggle != extended.request_queue.last_consumer_toggle[0]) ->
+         F extended.request_queue.last_consumer_toggle[0] = extended.server1.request_toggle)
+
+-- Ack Queue's last_consumer_toggle tracks client's ack_toggle after consumption
+LTLSPEC G ((extended.client.client_ack_state = received &
+          extended.client.ack_toggle != extended.ack_queue.last_consumer_toggle[0]) ->
+         F extended.ack_queue.last_consumer_toggle[0] = extended.client.ack_toggle)
+
+-- Ack Queue's last_producer_toggle tracks server's ack_toggle after production
+LTLSPEC G ((extended.server1.server_ack_state = sent &
+          extended.server1.ack_toggle != extended.ack_queue.last_producer_toggle[0]) ->
+         F extended.ack_queue.last_producer_toggle[0] = extended.server1.ack_toggle)
+
+
+-- FAIRNESS VERIFICATION
+-- =====================
+
+-- Both client and server make progress infinitely often
+LTLSPEC G F (extended.client.client_request_state = sending)
+LTLSPEC G F (extended.client.client_ack_state = receiving)
+
+LTLSPEC G F (extended.server1.server_request_state = receiving)
+LTLSPEC G F (extended.server1.server_ack_state = sending)
+
+
+-- REACHABILITY
+-- ============
+-- It's not possible to reach a full queue
+LTLSPEC G !extended.request_queue.full
+LTLSPEC G !extended.ack_queue.full
+
+-- EF reachability properties cannot be expressed in LTL.
+-- It's possible to reach an empty queue 
+-- SPEC EF extended.request_queue.empty
+-- SPEC EF extended.ack_queue.empty
+
+-- It's possible to reach a non-empty and non-full queue
+-- SPEC EF (!extended.request_queue.empty & !extended.request_queue.full)
+-- SPEC EF (!extended.ack_queue.empty & !extended.ack_queue.full)
+
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RR_Protocol/RR_ProtocolExtended2.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
