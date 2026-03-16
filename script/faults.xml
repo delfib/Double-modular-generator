@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <fault-injection>
 
-    <model>R_Protocol.smv</model>
+    <model>RR_Protocol.smv</model>
+
+    <protocol-type>RR</protocol-type>
 
     <target-module>Server</target-module>
 
@@ -10,13 +12,13 @@
     <faults>
         <fault id="stuck_receiving">
             <type>stuck-at</type>
-            <variable>server_state</variable>
+            <variable>server_request_state</variable>
             <value>receiving</value>
         </fault>
 
         <fault id="stuck_received">
             <type>stuck-at</type>
-            <variable>server_state</variable>
+            <variable>server_request_state</variable>
             <value>received</value>
         </fault>
         <!--
@@ -24,18 +26,14 @@
             <type>byzantine</type>
             <variable>server_state</variable>
         </fault>
-         -->
+        -->
     </faults>
 
     <properties>
         <property id="nominal_implies_extended">
             <comment>Whenever nominal server consumes, eventually an extended server consumes</comment>
             <spec>
-                AG (
-                    nominal.server.server_state = received ->
-                    AF (extended.server1.server_state = received
-                        | extended.server2.server_state = received)
-                )
+                (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
             </spec>
         </property>
     </properties>

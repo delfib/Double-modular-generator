@@ -14,12 +14,13 @@ def _extract_enum_values(module_text, variable):
         )
     return [v.strip() for v in match.group(1).split(',')]
 
+
 class BaseInjector:
     """
     Shared build pipeline used by all concrete injectors.
     Subclasses must implement:
-      - get_fault_mode_enum()        
-      - _build_fault_cases_for_var() 
+      - get_fault_mode_enum()
+      - _build_fault_cases_for_var()
     """
     def __init__(self, faults):
         self.faults = faults
@@ -35,10 +36,10 @@ class BaseInjector:
         """
         raise NotImplementedError
 
-    def build_extended_module(self, module_text, original_name, new_name, redundancy):
+    def build_extended_module_with_faults(self, module_text, original_name, new_name, redundancy):
         """
         Clone the target module, rename it, and inject all fault logic.
-        For redundancy > 1 a server_id param is added to index the queue slot.
+        For redundancy > 1 a server_id (or client_id) param is added to index the queue slot.
         """
         text = module_text
 
@@ -49,11 +50,14 @@ class BaseInjector:
             text
         )
 
-        # Add server_id parameter to module signature if redundancy > 1
+        # Add an id parameter to the module signature if redundancy > 1.
+        # The parameter name is derived from the original module name, lowercased,
+        # e.g. Server -> server_id, Client -> client_id.
         if redundancy > 1:
+            id_param = f"{original_name.lower()}_id"
             text = re.sub(
                 rf'MODULE\s+{re.escape(new_name)}\(([^)]*)\)',
-                lambda m: f'MODULE {new_name}({m.group(1)}, server_id)',
+                lambda m: f'MODULE {new_name}({m.group(1)}, {id_param})',
                 text
             )
 
@@ -63,12 +67,12 @@ class BaseInjector:
         text = self._inject_fault_mode_assign(text)
         # Inject fault conditions into next(<variable>) case blocks
         text = self._inject_fault_conditions(text, module_text)
-        # Guard the toggle logic so faults don't fire spurious toggles
-        text = self._protect_toggle_logic(text)
+        # Guard ALL toggle variables so faults don't fire spurious toggles
+        text = self._protect_toggle_logic(text, original_name)
 
-        # Update queue slot references for redundant servers
+        # Update queue slot references for redundant modules
         if redundancy > 1:
-            text = self._update_queue_references(text)
+            text = self._update_queue_references(text, original_name)
 
         return text
 
@@ -116,35 +120,58 @@ class BaseInjector:
 
         return text
 
-    def _protect_toggle_logic(self, text):
-        """Add a fault_mode = none  guard to the toggle condition."""
-        pattern = r'(next\(request_toggle\)\s*:=\s*case)(.*?)(esac;)'
-        match   = re.search(pattern, text, re.DOTALL)
-        if not match:
-            return text
+    def _protect_toggle_logic(self, text, original_name):
+        """
+        Add a 'fault_mode = none' guard to every toggle condition found in the
+        module.  This covers both request_toggle and ack_toggle (present in RR
+        protocol modules).
+        """
+        # Collect all toggle variable names that appear in the module
+        toggle_vars = re.findall(r'next\((\w*toggle\w*)\)\s*:=\s*case', text)
 
-        cases     = match.group(2)
-        new_cases = []
-        for line in cases.split('\n'):
-            if '!request_toggle' in line and ':' in line:
-                parts     = line.split(':', 1)
-                condition = parts[0].strip()
-                action    = parts[1].strip()
-                new_cases.append(
-                    f"        fault_mode = none &\n"
-                    f"        {condition} : {action}\n"
-                )
-            else:
-                new_cases.append(line + '\n')
+        for toggle_var in toggle_vars:
+            pattern = rf'(next\({re.escape(toggle_var)}\)\s*:=\s*case)(.*?)(esac;)'
+            match   = re.search(pattern, text, re.DOTALL)
+            if not match:
+                continue
 
-        new_block = match.group(1) + ''.join(new_cases) + '    ' + match.group(3)
-        return text[:match.start()] + new_block + text[match.end():]
+            cases     = match.group(2)
+            new_cases = []
+            for line in cases.split('\n'):
+                # Guard only lines that actually perform the toggle (contain !<toggle_var>)
+                if f'!{toggle_var}' in line and ':' in line:
+                    parts     = line.split(':', 1)
+                    condition = parts[0].strip()
+                    action    = parts[1].strip()
+                    new_cases.append(
+                        f"        fault_mode = none &\n"
+                        f"        {condition} : {action}\n"
+                    )
+                else:
+                    new_cases.append(line + '\n')
 
-    def _update_queue_references(self, text):
-        """Replace queue.last_server_toggle with queue.last_server_toggle[server_id]."""
+            new_block = match.group(1) + ''.join(new_cases) + '    ' + match.group(3)
+            text = text[:match.start()] + new_block + text[match.end():]
+
+        return text
+
+    def _update_queue_references(self, text, original_name):
+        """
+        Replace unindexed last_*_toggle queue references with indexed ones using
+        the id parameter that was added to the module signature.
+
+        For a Server-side target the module consumes from request_queue and
+        produces to ack_queue (RR), so:
+          - request_queue.last_consumer_toggle  -> request_queue.last_consumer_toggle[server_id]
+          - ack_queue.last_producer_toggle      -> ack_queue.last_producer_toggle[server_id]
+          - queue.last_server_toggle            -> queue.last_server_toggle[server_id]   (R protocol)
+        """
+        id_param = f"{original_name.lower()}_id"
+
+        # Generic replacement: any  <queue_var>.last_<anything>_toggle  not already indexed
         text = re.sub(
-            r'queue\.last_server_toggle(?!\[)',
-            'queue.last_server_toggle[server_id]',
+            r'(\w+\.last_\w+_toggle)(?!\[)',
+            rf'\1[{id_param}]',
             text
         )
         return text

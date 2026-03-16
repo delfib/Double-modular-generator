@@ -157,7 +157,7 @@ FAIRNESS
 -- =========================================================
 -- Nominal wrapper
 -- =========================================================
-MODULE NominalRR()
+MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR

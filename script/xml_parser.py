@@ -19,16 +19,18 @@ class Property:
         return f"Property(id={self.id})"
     
 class FaultModel:
-    def __init__(self, model_file, target_module, redundancy, faults, properties=None):
-        self.model_file = model_file
+    def __init__(self, model_file, protocol_type, target_module, redundancy, faults, properties=None):
+        self.model_file    = model_file
+        self.protocol_type = protocol_type   # 'R' or 'RR'
         self.target_module = target_module
-        self.redundancy = redundancy
-        self.faults = faults
-        self.properties = properties or []
+        self.redundancy    = redundancy
+        self.faults        = faults
+        self.properties    = properties or []
 
     def __repr__(self):
         return (
             f"FaultInjectionSpec(model_file={self.model_file}, "
+            f"protocol_type={self.protocol_type}, "
             f"target_module={self.target_module}, "
             f"redundancy={self.redundancy}, "
             f"faults={self.faults}, "
@@ -45,6 +47,15 @@ def parse_fault_model(xml_path):
     if model_file is None:
         raise ValueError("Missing <model> in XML")
     model_file = model_file.strip()
+
+    # <protocol-type>  R or RR  (defaults to R if absent for backwards compatibility)
+    protocol_type = root.findtext("protocol-type")
+    if protocol_type is None:
+        protocol_type = "R"
+    else:
+        protocol_type = protocol_type.strip().upper()
+    if protocol_type not in ("R", "RR"):
+        raise ValueError(f"<protocol-type> must be 'R' or 'RR', got '{protocol_type}'")
 
     # <target-module>
     target_module = root.findtext("target-module")
@@ -63,7 +74,7 @@ def parse_fault_model(xml_path):
     faults_elem = root.find("faults")
     if faults_elem is not None:
         for f in faults_elem.findall("fault"):
-            fault_id = f.attrib.get("id", "")
+            fault_id   = f.attrib.get("id", "")
             fault_type = f.findtext("type")
             variable   = f.findtext("variable")
             value      = f.findtext("value")
@@ -97,9 +108,9 @@ def parse_fault_model(xml_path):
                 raise ValueError(f"Property '{prop_id}' is missing <spec>")
             properties.append(Property(prop_id, comment, spec.strip()))
 
-
     return FaultModel(
         model_file=model_file,
+        protocol_type=protocol_type,
         target_module=target_module,
         redundancy=redundancy,
         faults=faults,
