@@ -1,7 +1,7 @@
 -- =========================================================
 -- Extended Queue (handles 2 servers)
 -- =========================================================
-MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles, N_SERVERS)
+MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles)
 VAR
     head               : 0..3;
     tail               : 0..3;
@@ -123,8 +123,7 @@ VAR
 
     queue   : process QueueExtended(Q_SIZE,
                                     client.request_toggle,
-                                    server_toggles,
-                                    2);
+                                    server_toggles);
 
 ASSIGN
     server_toggles[0] := server1.request_toggle;
