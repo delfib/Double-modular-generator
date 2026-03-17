@@ -172,17 +172,17 @@ VAR
 -- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
-    head                 : 0..3;
-    tail                 : 0..3;
-    last_producer_toggle : array 0..1 of boolean;
+    head : 0..3;
+    tail : 0..3;
+    last_producer_toggle : array 0..1 of boolean;  -- last toggle value we saw
     last_consumer_toggle : array 0..1 of boolean;
 
 ASSIGN
-    init(head)                    := 0;
-    init(tail)                    := 0;
-    init(last_producer_toggle[0]) := FALSE;
+    init(head) := 0;
+    init(tail) := 0;
+        init(last_producer_toggle[0]) := FALSE;
     init(last_producer_toggle[1]) := FALSE;
-    init(last_consumer_toggle[0]) := FALSE;
+        init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
 
     next(tail) := case
@@ -197,7 +197,7 @@ ASSIGN
         TRUE : head;
     esac;
 
-    next(last_producer_toggle[0]) := case
+        next(last_producer_toggle[0]) := case
         (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
         TRUE : last_producer_toggle[0];
     esac;
@@ -207,7 +207,7 @@ ASSIGN
         TRUE : last_producer_toggle[1];
     esac;
 
-    next(last_consumer_toggle[0]) := case
+        next(last_consumer_toggle[0]) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
         TRUE : last_consumer_toggle[0];
     esac;
@@ -218,9 +218,9 @@ ASSIGN
     esac;
 
 DEFINE
-    full  := ((tail + 1) mod Q_SIZE = head);
+    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];
+    full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
-    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];    -- has a server already consumed this request?
 
 FAIRNESS
     running
@@ -259,16 +259,16 @@ ASSIGN
         fault_mode = stuck_receiving : receiving;
         fault_mode = stuck_received : received;
 
-            server_request_state = receiving & request_queue.empty  : receiving;
+            server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[server_id] : receiving;
+            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[server_id]: receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
 
      next(server_ack_state) :=
         case
-            server_ack_state = sending & ack_queue.full                     : sending;
+            server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
             server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[server_id] : sending;
             server_ack_state = sent & ack_queue.full : sent;
@@ -278,21 +278,21 @@ ASSIGN
     next(request_toggle) := case
         fault_mode = none &
         server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : !request_toggle;
-        TRUE : request_toggle;
-    esac;                                                   
+        TRUE : request_toggle;                                                    
     
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
         server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
-        TRUE : ack_toggle;                                                   
+        TRUE : ack_toggle;                                                    
+    
     esac;
 
     next(request_received) := case
-        server_ack_state = sending & !ack_queue.full & request_received : FALSE;    -- false because a new ack has just been sent
-        server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : TRUE;     -- true because a new request has been received
-        TRUE : request_received;
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;        -- false because a new ack has just been sent
+        server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : TRUE;         -- true because a new request has been received
+        TRUE : request_received;     
     esac;
 
 FAIRNESS
