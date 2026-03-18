@@ -1,0 +1,424 @@
+-- =========================================================
+-- Queue module
+-- =========================================================
+MODULE Queue(Q_SIZE, producer_toggle, consumer_toggle)
+VAR
+    head : 0..3;
+    tail : 0..3;
+    last_producer_toggle : boolean;  -- last toggle value we saw
+    last_consumer_toggle : boolean;
+
+ASSIGN
+    init(head) := 0;
+    init(tail) := 0;
+    init(last_producer_toggle) := FALSE;
+    init(last_consumer_toggle) := FALSE;
+
+    next(tail) := case
+        (producer_toggle != last_producer_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
+        TRUE : tail;
+    esac;
+
+    next(head) := case
+        (consumer_toggle != last_consumer_toggle) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+    next(last_producer_toggle) := case
+        (producer_toggle != last_producer_toggle) : producer_toggle;
+        TRUE : last_producer_toggle;
+    esac;
+
+    next(last_consumer_toggle) := case
+        (consumer_toggle != last_consumer_toggle) : consumer_toggle;
+        TRUE : last_consumer_toggle;
+    esac;
+
+DEFINE
+    full := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Client module
+-- =========================================================
+MODULE Client(request_queue, ack_queue)
+VAR
+    client_request_state : {sending, sent};
+    client_ack_state  : {receiving, received};
+    request_toggle : boolean;  
+    ack_toggle : boolean;    
+    ack_received : boolean;
+
+ASSIGN
+    init(client_request_state) := sending;
+    init(client_ack_state)  := receiving;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(ack_received) := TRUE;
+
+    next(client_request_state) :=
+        case
+            client_request_state = sending & request_queue.full : sending;
+            client_request_state = sending & !request_queue.full & ack_received : sent;
+            client_request_state = sent & !request_queue.full & request_toggle = request_queue.last_producer_toggle : sending;
+            client_request_state = sent & request_queue.full : sent;
+            TRUE : client_request_state;
+        esac;
+
+    next(client_ack_state) :=
+        case
+            client_ack_state = receiving & ack_queue.empty : receiving;
+            client_ack_state = receiving & !ack_queue.empty : received;
+            client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
+            client_ack_state = received & ack_queue.empty : received;
+            TRUE : client_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;              
+        TRUE : request_toggle;                                                      
+    esac;
+
+    next(ack_toggle) := case
+        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;                   
+        TRUE : ack_toggle;                                                      
+    esac;
+
+    next(ack_received) := case
+        client_request_state = sending & !request_queue.full & ack_received : FALSE;       -- false because a new request has just been sent
+        client_ack_state = receiving & !ack_queue.empty : TRUE;          -- true because a new ack has been received
+        TRUE : ack_received;           
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Server module
+-- =========================================================
+MODULE Server(request_queue, ack_queue)
+VAR
+    server_request_state : {receiving, received};
+    server_ack_state : {sending, sent};
+    request_toggle : boolean;  
+    ack_toggle : boolean;
+    request_received : boolean;
+
+ASSIGN
+    init(server_request_state) := receiving;
+    init(server_ack_state) := sending;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(request_received) := FALSE;
+
+    next(server_request_state) :=
+        case
+            server_request_state = receiving & request_queue.empty : receiving;
+            server_request_state = receiving & !request_queue.empty : received;
+            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle: receiving;
+            server_request_state = received & request_queue.empty : received;
+            TRUE : server_request_state;
+        esac;
+
+     next(server_ack_state) :=
+        case
+            server_ack_state = sending & ack_queue.full : sending;
+            server_ack_state = sending & !ack_queue.full & request_received : sent;
+            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle : sending;
+            server_ack_state = sent & ack_queue.full : sent;
+            TRUE : server_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        server_request_state = receiving & !request_queue.empty : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+    next(ack_toggle) := case
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;                   
+        TRUE : ack_toggle;                                                    
+    esac;
+
+    next(request_received) := case
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;        -- false because a new ack has just been sent
+        server_request_state = receiving & !request_queue.empty : TRUE;         -- true because a new request has been received
+        TRUE : request_received;     
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Nominal wrapper
+-- =========================================================
+MODULE Nominal()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    client : process Client(request_queue, ack_queue);
+    server : process Server(request_queue, ack_queue);
+    request_queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
+
+
+MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
+VAR
+    head : 0..3;
+    tail : 0..3;
+    last_producer_toggle : array 0..2 of boolean;  -- last toggle value we saw
+    last_consumer_toggle : array 0..2 of boolean;
+
+ASSIGN
+    init(head) := 0;
+    init(tail) := 0;
+        init(last_producer_toggle[0]) := FALSE;
+    init(last_producer_toggle[1]) := FALSE;
+    init(last_producer_toggle[2]) := FALSE;
+        init(last_consumer_toggle[0]) := FALSE;
+    init(last_consumer_toggle[1]) := FALSE;
+    init(last_consumer_toggle[2]) := FALSE;
+
+    next(tail) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[2] != last_producer_toggle[2]) : (tail + 1) mod Q_SIZE;
+        TRUE : tail;
+    esac;
+
+    next(head) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[1] != last_consumer_toggle[1]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[2] != last_consumer_toggle[2]) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+        next(last_producer_toggle[0]) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
+        TRUE : last_producer_toggle[0];
+    esac;
+
+    next(last_producer_toggle[1]) := case
+        (producer_toggles[1] != last_producer_toggle[1]) : producer_toggles[1];
+        TRUE : last_producer_toggle[1];
+    esac;
+
+    next(last_producer_toggle[2]) := case
+        (producer_toggles[2] != last_producer_toggle[2]) : producer_toggles[2];
+        TRUE : last_producer_toggle[2];
+    esac;
+
+        next(last_consumer_toggle[0]) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
+        TRUE : last_consumer_toggle[0];
+    esac;
+
+    next(last_consumer_toggle[1]) := case
+        (consumer_toggles[1] != last_consumer_toggle[1]) : consumer_toggles[1];
+        TRUE : last_consumer_toggle[1];
+    esac;
+
+    next(last_consumer_toggle[2]) := case
+        (consumer_toggles[2] != last_consumer_toggle[2]) : consumer_toggles[2];
+        TRUE : last_consumer_toggle[2];
+    esac;
+
+DEFINE
+    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1] | last_consumer_toggle[2] != consumer_toggles[2];
+    full := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+FAIRNESS
+    running
+
+
+MODULE ClientExtended(request_queue, ack_queue)
+VAR
+    client_request_state : {sending, sent};
+    client_ack_state  : {receiving, received};
+    request_toggle : boolean;  
+    ack_toggle : boolean;    
+    ack_received : boolean;
+
+ASSIGN
+    init(client_request_state) := sending;
+    init(client_ack_state)  := receiving;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(ack_received) := TRUE;
+
+    next(client_request_state) :=
+        case
+            client_request_state = sending & request_queue.full : sending;
+            client_request_state = sending & !request_queue.full & ack_received : sent;
+            client_request_state = sent & !request_queue.full & request_toggle = request_queue.last_producer_toggle[0] : sending;
+            client_request_state = sent & request_queue.full : sent;
+            TRUE : client_request_state;
+        esac;
+
+    next(client_ack_state) :=
+        case
+            client_ack_state = receiving & ack_queue.empty : receiving;
+            client_ack_state = receiving & !ack_queue.empty : received;
+            client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle[0] : receiving;
+            client_ack_state = received & ack_queue.empty : received;
+            TRUE : client_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;              
+        TRUE : request_toggle;                                                      
+    esac;
+
+    next(ack_toggle) := case
+        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;                   
+        TRUE : ack_toggle;                                                      
+    esac;
+
+    next(ack_received) := case
+        client_request_state = sending & !request_queue.full & ack_received : FALSE;       -- false because a new request has just been sent
+        client_ack_state = receiving & !ack_queue.empty : TRUE;          -- true because a new ack has been received
+        TRUE : ack_received;           
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Server module
+-- =========================================================
+
+
+MODULE ServerExtended(request_queue, ack_queue, server_id)
+VAR
+    fault_mode : {none, byzantine_server_request_state};
+    server_request_state : {receiving, received};
+    server_ack_state : {sending, sent};
+    request_toggle : boolean;  
+    ack_toggle : boolean;
+    request_received : boolean;
+
+ASSIGN
+    init(fault_mode) := none;
+
+    init(server_request_state) := receiving;
+    init(server_ack_state) := sending;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(request_received) := FALSE;
+
+    next(fault_mode) :=
+        case
+            fault_mode = none : {none, byzantine_server_request_state};
+            TRUE              : fault_mode;
+        esac;
+
+    next(server_request_state) :=
+        case
+        fault_mode = byzantine_server_request_state : {receiving, received};
+
+            server_request_state = receiving & request_queue.empty : receiving;
+            server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : received;
+            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[server_id]: receiving;
+            server_request_state = received & request_queue.empty : received;
+            TRUE : server_request_state;
+        esac;
+
+     next(server_ack_state) :=
+        case
+            server_ack_state = sending & ack_queue.full : sending;
+            server_ack_state = sending & !ack_queue.full & request_received : sent;
+            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[server_id] : sending;
+            server_ack_state = sent & ack_queue.full : sent;
+            TRUE : server_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        fault_mode = none &
+        server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : !request_toggle;
+        TRUE : request_toggle;                                                    
+    
+    esac;
+
+    next(ack_toggle) := case
+        fault_mode = none &
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
+        TRUE : ack_toggle;                                                    
+    
+    esac;
+
+    next(request_received) := case
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;        -- false because a new ack has just been sent
+        server_request_state = receiving & !request_queue.empty & !request_queue.request_consumed : TRUE;         -- true because a new request has been received
+        TRUE : request_received;     
+    esac;
+
+FAIRNESS
+    running
+
+
+-- =========================================================
+-- Nominal wrapper
+-- =========================================================
+
+
+MODULE Extended()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    client : process ClientExtended(request_queue, ack_queue);
+    request_prod_toggles : array 0..2 of boolean;
+
+    request_cons_toggles : array 0..2 of boolean;
+
+    ack_prod_toggles     : array 0..2 of boolean;
+
+    ack_cons_toggles     : array 0..2 of boolean;
+
+    server1 : process ServerExtended(request_queue, ack_queue, 0);
+
+    server2 : process ServerExtended(request_queue, ack_queue, 1);
+
+    server3 : process ServerExtended(request_queue, ack_queue, 2);
+    request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
+    ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+
+ASSIGN
+    request_prod_toggles[0] := client.request_toggle;
+    request_prod_toggles[1] := FALSE;   -- dummy, stays FALSE forever
+    request_prod_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+    request_cons_toggles[0] := server1.request_toggle;
+    request_cons_toggles[1] := server2.request_toggle;
+    request_cons_toggles[2] := server3.request_toggle;
+    ack_prod_toggles[0] := server1.ack_toggle;
+    ack_prod_toggles[1] := server2.ack_toggle;
+    ack_prod_toggles[2] := server3.ack_toggle;
+    ack_cons_toggles[0] := client.ack_toggle;
+    ack_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
+    ack_cons_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+
+
+-- =========================================================
+--  Synchronization Module
+-- =========================================================
+MODULE Sync()
+VAR
+    nominal  : Nominal();
+    extended : Extended();
+
+-- Whenever nominal server consumes, eventually an extended server consumes
+SPEC AG (nominal.server.server_request_state = received -> AF (extended.server1.server_request_state = received | extended.server2.server_request_state = received))
+
+
+-- =========================================================
+--  Main Module
+-- =========================================================
+MODULE main
+VAR
+    sync : Sync();

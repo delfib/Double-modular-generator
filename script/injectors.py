@@ -17,7 +17,7 @@ def _extract_enum_values(module_text, variable):
 
 class BaseInjector:
     """
-    Shared build pipeline used by all concrete injectors.
+    Used by all concrete injectors.
     Subclasses must implement:
       - get_fault_mode_enum()
       - _build_fault_cases_for_var()
@@ -31,16 +31,13 @@ class BaseInjector:
 
     def _build_fault_cases_for_var(self, variable, var_faults, module_text):
         """
-        Return the SMV case lines (as a string) to prepend inside
+        Return the SMV case lines (as a string).
         next(<variable>) := case … for every fault that targets <variable>.
         """
         raise NotImplementedError
 
     def build_extended_module_with_faults(self, module_text, original_name, new_name, redundancy):
-        """
-        Clone the target module, rename it, and inject all fault logic.
-        For redundancy > 1 a server_id (or client_id) param is added to index the queue slot.
-        """
+        """Clone the target module, rename it, and inject all fault logic."""
         text = module_text
 
         # Rename module declaration
@@ -73,20 +70,20 @@ class BaseInjector:
         # Update queue slot references for redundant modules
         if redundancy > 1:
             text = self._update_queue_references(text, original_name)
+            # Add the !request_queue.request_consumed guard if protocol = RR
+            text = self._inject_request_consumed_guard(text)
 
         return text
 
     def _inject_fault_mode_var(self, text):
-        """Insert  fault_mode : {none, ...};  as the first VAR declaration."""
+        """Insert fault_mode : {none, ...};  as the first VAR declaration."""
         enum_vals  = self.get_fault_mode_enum()
         fault_decl = f"    fault_mode : {{{enum_vals}}};\n"
         # Insert after VAR line
         return re.sub(r'(VAR\s*\n)', r'\1' + fault_decl, text)
 
     def _inject_fault_mode_assign(self, text):
-        """
-        Insert init(fault_mode) and next(fault_mode) into the ASSIGN block.
-        """
+        """Insert init(fault_mode) and next(fault_mode) into the ASSIGN block."""
         enum_vals  = self.get_fault_mode_enum()
         init_line  = "    init(fault_mode) := none;\n\n"
         next_block = (
@@ -121,11 +118,7 @@ class BaseInjector:
         return text
 
     def _protect_toggle_logic(self, text, original_name):
-        """
-        Add a 'fault_mode = none' guard to every toggle condition found in the
-        module.  This covers both request_toggle and ack_toggle (present in RR
-        protocol modules).
-        """
+        """Add a 'fault_mode = none' guard to every toggle condition found in the module."""
         # Collect all toggle variable names that appear in the module
         toggle_vars = re.findall(r'next\((\w*toggle\w*)\)\s*:=\s*case', text)
 
@@ -155,16 +148,34 @@ class BaseInjector:
 
         return text
 
+    def _inject_request_consumed_guard(self, text):
+        """For RR-protocol modules add '& !request_queue.request_consumed'"""
+        # Only apply if this module consumes from request_queue
+        if 'request_queue' not in text:
+            return text
+ 
+        consumed_guard = '!request_queue.request_consumed'
+ 
+        def add_guard(m):
+            line = m.group(0)
+            if consumed_guard in line:
+                return line  
+            if re.search(r'\w+_state\s*=\s*received\b', line):
+                return line   # already-received state transition, no guard needed
+            # Insert the guard right after !request_queue.empty
+            return line.replace('!request_queue.empty', f'!request_queue.empty & {consumed_guard}')
+ 
+        text = re.sub(
+            r'[^\n]*!request_queue\.empty[^\n]*',
+            add_guard,
+            text
+        )
+        return text
+
     def _update_queue_references(self, text, original_name):
         """
-        Replace unindexed last_*_toggle queue references with indexed ones using
-        the id parameter that was added to the module signature.
-
-        For a Server-side target the module consumes from request_queue and
-        produces to ack_queue (RR), so:
-          - request_queue.last_consumer_toggle  -> request_queue.last_consumer_toggle[server_id]
-          - ack_queue.last_producer_toggle      -> ack_queue.last_producer_toggle[server_id]
-          - queue.last_server_toggle            -> queue.last_server_toggle[server_id]   (R protocol)
+        Replace unindexed last_*_toggle queue references with indexed ones using the id parameter.
+        e.g: request_queue.last_consumer_toggle  -> request_queue.last_consumer_toggle[server_id]
         """
         id_param = f"{original_name.lower()}_id"
 
@@ -182,7 +193,6 @@ class StuckAtInjector(BaseInjector):
     Injects stuck-at faults: the target variable is permanently frozen at a
     fixed value once the fault mode is activated.
     """
-
     def get_fault_mode_enum(self):
         modes = ['none']
         for fault in self.faults:

@@ -11,10 +11,7 @@ def save_smv(path, content):
 
 
 def find_module(content, module_name):
-    """
-    Returns (start_index, end_index) of MODULE <module_name>
-    as line indices into content.splitlines(keepends=True).
-    """
+    """Returns (start_index, end_index) of MODULE <module_name>"""
     lines = content.splitlines(keepends=True)
 
     start = None

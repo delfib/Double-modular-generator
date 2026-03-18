@@ -21,7 +21,7 @@ class Property:
 class FaultModel:
     def __init__(self, model_file, protocol_type, target_module, redundancy, faults, properties=None):
         self.model_file    = model_file
-        self.protocol_type = protocol_type   # 'R' or 'RR'
+        self.protocol_type = protocol_type  
         self.target_module = target_module
         self.redundancy    = redundancy
         self.faults        = faults
@@ -48,14 +48,12 @@ def parse_fault_model(xml_path):
         raise ValueError("Missing <model> in XML")
     model_file = model_file.strip()
 
-    # <protocol-type>  R or RR  (defaults to R if absent for backwards compatibility)
+    # <protocol-type>  R or RR  
     protocol_type = root.findtext("protocol-type")
-    if protocol_type is None:
-        protocol_type = "R"
+    if protocol_type not in ("R", "RR") or protocol_type is None:
+        raise ValueError(f"<protocol-type> must be 'R' or 'RR', got '{protocol_type}'")
     else:
         protocol_type = protocol_type.strip().upper()
-    if protocol_type not in ("R", "RR"):
-        raise ValueError(f"<protocol-type> must be 'R' or 'RR', got '{protocol_type}'")
 
     # <target-module>
     target_module = root.findtext("target-module")

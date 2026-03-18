@@ -4,7 +4,7 @@ import re
 from xml_parser import parse_fault_model
 from smv_utils  import load_smv, save_smv, find_module
 from injectors  import create_injector
-from builders   import build_extended_queues, build_extended_wrapper, build_sync_module
+from builders   import build_extended_queue, build_extended_wrapper, build_sync_module, patch_non_target_module_RR
 
 
 # ---------------------------------------------------------------------------
@@ -19,17 +19,13 @@ def get_module_text(smv_content, module_name):
 
 
 def strip_main_module(smv_content):
-    """
-    Remove MODULE main from the nominal SMV content.
-    """
-    # Try to strip comment-headed MODULE main block
+    """Remove MODULE main from the nominal SMV content."""
     result = re.sub(
         r'\n*--[^\n]*\n--[^\n]*[Mm]ain[^\n]*\n--[^\n]*\nMODULE main.*',
         '',
         smv_content,
         flags=re.DOTALL
     )
-    # Fallback: bare MODULE main with no matching comment header
     if 'MODULE main' in result:
         result = re.sub(r'\n*MODULE main.*', '', result, flags=re.DOTALL)
 
@@ -44,13 +40,10 @@ class FaultInjectionEngine:
     Orchestrates the full fault injection pipeline:
       1. Extract original modules from the nominal SMV
       2. Build the extended (faulted) target module via the injector
-      3. Build the extended queue(s) (array of toggle slots)
+      3. Build the extended queue
       4. Build the extended wrapper
       5. Build the Sync + main module with any SPEC properties
       6. Assemble and return the final SMV file content
-
-    Supports both R (single-queue) and RR (two-queue) protocols, and both
-    Server and Client as injection targets.
     """
     def __init__(self, fault_model):
         self.fault_model = fault_model
@@ -71,9 +64,17 @@ class FaultInjectionEngine:
             target_text, target, f'{target}Extended', n
         )
 
-        # --- 3. Build extended queue(s) ---
-        # Returns a list: one element for R, two elements for RR
-        extended_queues = build_extended_queues(
+        # --- Build a patched non-target module for RR protocol ---
+        patched_non_target = None
+        if protocol_type == 'RR':
+            non_target      = 'Client' if target == 'Server' else 'Server'
+            non_target_text = get_module_text(smv_content, non_target)
+            patched_non_target = patch_non_target_module_RR(
+                non_target_text, non_target, f'{non_target}Extended'
+            )
+
+        # --- 3. Build extended queue ---
+        extended_queue = build_extended_queue(
             queue_text, n, target, protocol_type
         )
 
@@ -82,17 +83,19 @@ class FaultInjectionEngine:
             wrapper_text, target, n, protocol_type
         )
 
-        # --- 5. Build Sync + main (with properties) ---
+        # --- 5. Build Sync + main (with properties) modules ---
         sync_main = build_sync_module(target, n, properties=self.fault_model.properties)
 
         # --- 6. Assemble final SMV file ---
         nominal_base = strip_main_module(smv_content)
 
-        parts = (
-            [nominal_base]
-            + [q.rstrip() for q in extended_queues]
-            + [extended_target.rstrip(), extended_wrapper.rstrip(), sync_main]
-        )
+        # For RR protocol insert the patched non-target module 
+        extended_parts = [q.rstrip() for q in extended_queue]
+        if patched_non_target is not None:
+            extended_parts.append(patched_non_target.rstrip())
+        extended_parts += [extended_target.rstrip(), extended_wrapper.rstrip()]
+
+        parts = [nominal_base] + extended_parts + [sync_main]
 
         return '\n\n\n'.join(parts)
 
