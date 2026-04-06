@@ -115,6 +115,9 @@ VAR
     queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
+-- =========================================================
+-- Extended Server
+-- =========================================================
 MODULE ServerExtended(queue)
 VAR
     fault_mode : {none, byzantine_server_state};
@@ -153,19 +156,16 @@ ASSIGN
 FAIRNESS
     running
 
-
 -- =========================================================
--- Nominal wrapper
+-- Extended wrapper
 -- =========================================================
-
-
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
     client : process Client(queue);
-    server1 : process ServerExtended(queue);
-    queue : process Queue(Q_SIZE, client.request_toggle, server1.request_toggle);
+    server : process ServerExtended(queue);
+    queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
 -- =========================================================
@@ -177,7 +177,7 @@ VAR
     extended : Extended();
 
 -- Whenever nominal server consumes, eventually an extended server consumes
-SPEC AG (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
+SPEC AG (nominal.server.server_state = received -> AF (extended.server.server_state = received))
 
 
 -- =========================================================
