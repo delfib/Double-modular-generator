@@ -229,8 +229,18 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
 
     # Rename wrapper module
     text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
+    
+    if redundancy == 1:
+        # Replace ONLY the target instance with Extended version
+        text = re.sub(
+            rf'process\s+{target_module}\(',
+            f'process {target_module}Extended(',
+            text
+        )
 
-    n        = redundancy
+        return text
+
+    n = redundancy
 
     # Locate the original target instance line
     instance_pattern = rf'(\s*)(\w+)\s*:\s*process\s+{re.escape(target_module)}\(([^)]*)\);'
@@ -326,7 +336,17 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     # Rename wrapper module
     text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
 
-    n                = redundancy
+    if redundancy == 1:
+        # Replace ONLY the target instance
+        text = re.sub(
+            rf'process\s+{target_module}\(',
+            f'process {target_module}Extended(',
+            text
+        )
+
+        return text
+
+    n = redundancy
     is_server_target = target_module.lower() != 'client'
     
     # Locate the original target instance line

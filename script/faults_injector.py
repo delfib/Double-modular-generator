@@ -66,17 +66,20 @@ class FaultInjectionEngine:
 
         # --- Build a patched non-target module for RR protocol ---
         patched_non_target = None
-        if protocol_type == 'RR':
+        if protocol_type == 'RR' and n > 1:
             non_target      = 'Client' if target == 'Server' else 'Server'
             non_target_text = get_module_text(smv_content, non_target)
             patched_non_target = patch_non_target_module_RR(
                 non_target_text, non_target, f'{non_target}Extended'
             )
 
-        # --- 3. Build extended queue ---
-        extended_queue = build_extended_queue(
-            queue_text, n, target, protocol_type
-        )
+        # --- 3. Build extended queue (ONLY if redundancy > 1) ---
+        if n > 1:
+            extended_queue = build_extended_queue(
+                queue_text, n, target, protocol_type
+            )
+        else:
+            extended_queue = []   # No extended queue, keep nominal Queue
 
         # --- 4. Build extended wrapper ---
         extended_wrapper = build_extended_wrapper(
