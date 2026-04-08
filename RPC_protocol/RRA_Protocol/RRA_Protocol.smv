@@ -55,8 +55,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;   -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;   -- TRUE once reply_ack has been sent
+    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
+    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -86,7 +86,7 @@ ASSIGN
 
     next(client_reply_ack_state) := case
         client_reply_ack_state = sending & reply_ack_queue.queue_full : sending;
-        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;   
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;
         client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle : sending;
         client_reply_ack_state = sent & reply_ack_queue.queue_full : sent;
         TRUE : client_reply_ack_state;
@@ -109,11 +109,11 @@ ASSIGN
 
     next(ack_received) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : FALSE;   -- new reply to server's ack just sent
-        client_ack_state = receiving & !ack_queue.queue_empty                     : TRUE;    -- reply received
+        client_ack_state = receiving & !ack_queue.queue_empty : TRUE;    -- reply received
         TRUE : ack_received;
     esac;
 
-    next(reply_ack_sent) :=  case
+    next(reply_ack_sent) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;  -- reply_ack just sent
         client_request_state = sending & !request_queue.queue_full & reply_ack_sent : FALSE;   -- new request just sent
         TRUE : reply_ack_sent;
@@ -280,9 +280,24 @@ SPEC AG ((nominal.server.server_reply_ack_state = receiving &
           AX nominal.server.server_reply_ack_state = received) ->
          !nominal.reply_ack_queue.queue_empty)
 
+-- Server cache cannot be freed without receiving a reply_ack first
+SPEC AG ((nominal.server.memory_cache = full & 
+          AX nominal.server.memory_cache = free) -> 
+         !nominal.reply_ack_queue.queue_empty)
+
+-- Server never accepts a new request while reply_ack is still pending
+SPEC AG ((nominal.server.server_request_state = receiving & 
+          AX nominal.server.server_request_state = received) -> 
+         nominal.server.reply_ack_received)
+
+-- If server cache is full, reply_ack must not have been received yet
+SPEC AG (nominal.server.memory_cache = full -> !nominal.server.reply_ack_received)
+
+
 -- ==========================================================
 -- LIVENESS PROPERTIES
 -- ==========================================================
+
 -- System never deadlocks - queues always eventually reach a non-full, non-empty state
 SPEC AG (nominal.request_queue.queue_empty -> AF !nominal.request_queue.queue_empty)
 SPEC AG (nominal.ack_queue.queue_empty -> AF !nominal.ack_queue.queue_empty)
@@ -326,6 +341,7 @@ SPEC AG (nominal.client.ack_received -> AF !nominal.client.ack_received)
 -- ==========================================================
 -- FUNCTIONAL CORRECTNESS
 -- ==========================================================
+
 -- Every request is eventually consumed by the server
 SPEC AG (nominal.client.client_request_state = sent -> AF nominal.server.server_request_state = received)
 
@@ -371,9 +387,19 @@ SPEC AG ((nominal.server.server_ack_state = sending &
 SPEC AG ((nominal.client.client_ack_state = receiving &
           AX nominal.client.client_ack_state = received) -> !nominal.ack_queue.queue_empty)
 
+-- Every reply_ack sent is eventually received
+SPEC AG (nominal.client.client_reply_ack_state = sent -> 
+         AF nominal.server.server_reply_ack_state = received)
+
+-- If reply_ack queue is non-empty, server will eventually receive it
+SPEC AG (!nominal.reply_ack_queue.queue_empty -> 
+         AF nominal.server.server_reply_ack_state = received)
+
+
 -- ==========================================================
 -- TOGGLE SYNCHRONIZATION
 -- ==========================================================
+
 -- Toggles fire exactly when the corresponding transition occurs
 SPEC AG ((nominal.client.client_request_state = sending & !nominal.request_queue.queue_full & nominal.client.reply_ack_sent) ->
          AF nominal.client.request_toggle != nominal.request_queue.last_producer_toggle)
@@ -382,7 +408,7 @@ SPEC AG ((nominal.client.client_ack_state = receiving & !nominal.ack_queue.queue
 
 SPEC AG ((nominal.client.client_reply_ack_state = sending & !nominal.reply_ack_queue.queue_full & nominal.client.ack_received) ->
          AF nominal.client.reply_ack_toggle != nominal.reply_ack_queue.last_producer_toggle)
-SPEC AG ((nominal.server.server_request_state = receiving & !nominal.request_queue.queue_empty) ->
+SPEC AG ((nominal.server.server_request_state = receiving & !nominal.request_queue.queue_empty & nominal.server.reply_ack_received) ->
          AF nominal.server.request_toggle != nominal.request_queue.last_consumer_toggle)
 
 SPEC AG ((nominal.server.server_ack_state = sending & !nominal.ack_queue.queue_full & nominal.server.request_received) ->
