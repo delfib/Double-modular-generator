@@ -35,8 +35,8 @@ ASSIGN
     esac;
 
 DEFINE
-    full := ((tail + 1) mod Q_SIZE = head);
-    empty := (tail = head);
+    queue_full := ((tail + 1) mod Q_SIZE = head);
+    queue_empty := (tail = head);
 
 FAIRNESS
     running
@@ -69,53 +69,53 @@ ASSIGN
     init(reply_ack_sent)         := TRUE;
 
     next(client_request_state) := case
-        client_request_state = sending & request_queue.full : sending;
-        client_request_state = sending & !request_queue.full & reply_ack_sent : sent;
-        client_request_state = sent & !request_queue.full & request_toggle = request_queue.last_producer_toggle : sending;
-        client_request_state = sent & request_queue.full : sent;
+        client_request_state = sending & request_queue.queue_full : sending;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent : sent;
+        client_request_state = sent & !request_queue.queue_full & request_toggle = request_queue.last_producer_toggle : sending;
+        client_request_state = sent & request_queue.queue_full : sent;
         TRUE : client_request_state;
     esac;
 
     next(client_ack_state) := case
-        client_ack_state = receiving & ack_queue.empty : receiving;
-        client_ack_state = receiving & !ack_queue.empty : received;
-        client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
-        client_ack_state = received & ack_queue.empty : received;
+        client_ack_state = receiving & ack_queue.queue_empty : receiving;
+        client_ack_state = receiving & !ack_queue.queue_empty : received;
+        client_ack_state = received & !ack_queue.queue_empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
+        client_ack_state = received & ack_queue.queue_empty : received;
         TRUE : client_ack_state;
     esac;
 
     next(client_reply_ack_state) := case
-        client_reply_ack_state = sending & reply_ack_queue.full : sending;
-        client_reply_ack_state = sending & !reply_ack_queue.full & ack_received : sent;   
-        client_reply_ack_state = sent & !reply_ack_queue.full & reply_ack_toggle = reply_ack_queue.last_producer_toggle : sending;
-        client_reply_ack_state = sent & reply_ack_queue.full : sent;
+        client_reply_ack_state = sending & reply_ack_queue.queue_full : sending;
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;   
+        client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle : sending;
+        client_reply_ack_state = sent & reply_ack_queue.queue_full : sent;
         TRUE : client_reply_ack_state;
     esac;
 
     next(request_toggle) := case
-        client_request_state = sending & !request_queue.full & reply_ack_sent : !request_toggle;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(ack_toggle) := case
-        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;
+        client_ack_state = receiving & !ack_queue.queue_empty : !ack_toggle;
         TRUE : ack_toggle;
     esac;
 
     next(reply_ack_toggle) := case
-        client_reply_ack_state = sending & !reply_ack_queue.full & ack_received : !reply_ack_toggle;
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
     next(ack_received) := case
-        client_reply_ack_state = sending & !reply_ack_queue.full & ack_received : FALSE;   -- new reply to server's ack just sent
-        client_ack_state = receiving & !ack_queue.empty                     : TRUE;    -- reply received
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : FALSE;   -- new reply to server's ack just sent
+        client_ack_state = receiving & !ack_queue.queue_empty                     : TRUE;    -- reply received
         TRUE : ack_received;
     esac;
 
     next(reply_ack_sent) :=  case
-        client_reply_ack_state = sending & !reply_ack_queue.full & ack_received : TRUE;  -- reply_ack just sent
-        client_request_state = sending & !request_queue.full & reply_ack_sent : FALSE;   -- new request just sent
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;  -- reply_ack just sent
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent : FALSE;   -- new request just sent
         TRUE : reply_ack_sent;
     esac;
 
@@ -137,6 +137,7 @@ VAR
     reply_ack_toggle        : boolean;               
 
     request_received        : boolean;   -- guards sending ack 
+    reply_ack_received      : boolean;    -- guards receiving requests 
     memory_cache            : {full, free};  -- reply cache
 
 ASSIGN
@@ -147,58 +148,65 @@ ASSIGN
     init(ack_toggle)             := FALSE;
     init(reply_ack_toggle)       := FALSE;
     init(request_received)       := FALSE;
+    init(reply_ack_received)     := TRUE;
     init(memory_cache)           := free;
 
     next(server_request_state) := case
-        server_request_state = receiving & request_queue.empty : receiving;
-        server_request_state = receiving & !request_queue.empty : received;
-        server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle : receiving;
-        server_request_state = received & request_queue.empty : received;
+        server_request_state = receiving & request_queue.queue_empty : receiving;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received : received;
+        server_request_state = received & !request_queue.queue_empty & request_toggle = request_queue.last_consumer_toggle : receiving;
+        server_request_state = received & request_queue.queue_empty : received;
         TRUE : server_request_state;
     esac;
 
     next(server_ack_state) := case
-        server_ack_state = sending & ack_queue.full : sending;
-        server_ack_state = sending & !ack_queue.full & request_received : sent;
-        server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle : sending;
-        server_ack_state = sent & ack_queue.full : sent;
+        server_ack_state = sending & ack_queue.queue_full : sending;
+        server_ack_state = sending & !ack_queue.queue_full & request_received : sent;
+        server_ack_state = sent & !ack_queue.queue_full & ack_toggle = ack_queue.last_producer_toggle : sending;
+        server_ack_state = sent & ack_queue.queue_full : sent;
         TRUE : server_ack_state;
     esac;
 
     -- Server waits for the reply_ack from the client, then frees the cache.
     next(server_reply_ack_state) := case
-        server_reply_ack_state = receiving & reply_ack_queue.empty : receiving;
-        server_reply_ack_state = receiving & !reply_ack_queue.empty : received;
-        server_reply_ack_state = received & !reply_ack_queue.empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle : receiving;
-        server_reply_ack_state = received & reply_ack_queue.empty : received;
+        server_reply_ack_state = receiving & reply_ack_queue.queue_empty : receiving;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : received;
+        server_reply_ack_state = received & !reply_ack_queue.queue_empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle : receiving;
+        server_reply_ack_state = received & reply_ack_queue.queue_empty : received;
         TRUE : server_reply_ack_state;
     esac;
 
     next(request_toggle) := case
-        server_request_state = receiving & !request_queue.empty : !request_toggle;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(ack_toggle) := case
-        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
+        server_ack_state = sending & !ack_queue.queue_full & request_received : !ack_toggle;
         TRUE : ack_toggle;
     esac;
 
     next(reply_ack_toggle) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.empty : !reply_ack_toggle;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
     next(request_received) := case
-        server_ack_state = sending & !ack_queue.full & request_received : FALSE;    -- ack just sent
-        server_request_state = receiving & !request_queue.empty : TRUE;     -- request received
+        server_ack_state = sending & !ack_queue.queue_full & request_received : FALSE;    -- ack just sent
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received : TRUE;     -- request received
         TRUE : request_received;
+    esac;
+
+    next(reply_ack_received) := case
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : TRUE;   -- reply ack received
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received : FALSE;  -- new request received
+        TRUE : reply_ack_received;
     esac;
 
     -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
-        server_ack_state = sending & !ack_queue.full & request_received : full;  -- reply being sent, cache it
-        server_reply_ack_state = receiving & !reply_ack_queue.empty : free;  -- reply_ack received, free cache
+        server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : free;  -- reply_ack received, free cache
         TRUE : memory_cache;
     esac;
 
@@ -241,20 +249,21 @@ SPEC AG (nominal.reply_ack_queue.head >= 0 & nominal.reply_ack_queue.head < nomi
 SPEC AG (nominal.reply_ack_queue.tail >= 0 & nominal.reply_ack_queue.tail < nominal.Q_SIZE)
 
 -- Full and empty are mutually exclusive for all queues
-SPEC AG !(nominal.request_queue.full & nominal.request_queue.empty)
-SPEC AG !(nominal.ack_queue.full & nominal.ack_queue.empty)
-SPEC AG !(nominal.reply_ack_queue.full & nominal.reply_ack_queue.empty)
+SPEC AG !(nominal.request_queue.queue_full & nominal.request_queue.queue_empty)
+SPEC AG !(nominal.ack_queue.queue_full & nominal.ack_queue.queue_empty)
+SPEC AG !(nominal.reply_ack_queue.queue_full & nominal.reply_ack_queue.queue_empty)
 
 -- Queue full/empty definitions are correct
-SPEC AG (nominal.request_queue.full <-> ((nominal.request_queue.tail + 1) mod nominal.Q_SIZE = nominal.request_queue.head))
-SPEC AG (nominal.request_queue.empty <-> (nominal.request_queue.tail = nominal.request_queue.head))
-SPEC AG (nominal.ack_queue.full <-> ((nominal.ack_queue.tail + 1) mod nominal.Q_SIZE = nominal.ack_queue.head))
-SPEC AG (nominal.ack_queue.empty <-> (nominal.ack_queue.tail = nominal.ack_queue.head))
-SPEC AG (nominal.reply_ack_queue.full <-> ((nominal.reply_ack_queue.tail + 1) mod nominal.Q_SIZE = nominal.reply_ack_queue.head))
-SPEC AG (nominal.reply_ack_queue.empty <-> (nominal.reply_ack_queue.tail = nominal.reply_ack_queue.head))
+SPEC AG (nominal.request_queue.queue_full <-> ((nominal.request_queue.tail + 1) mod nominal.Q_SIZE = nominal.request_queue.head))
+SPEC AG (nominal.request_queue.queue_empty <-> (nominal.request_queue.tail = nominal.request_queue.head))
+SPEC AG (nominal.ack_queue.queue_full <-> ((nominal.ack_queue.tail + 1) mod nominal.Q_SIZE = nominal.ack_queue.head))
+SPEC AG (nominal.ack_queue.queue_empty <-> (nominal.ack_queue.tail = nominal.ack_queue.head))
+SPEC AG (nominal.reply_ack_queue.queue_full <-> ((nominal.reply_ack_queue.tail + 1) mod nominal.Q_SIZE = nominal.reply_ack_queue.head))
+SPEC AG (nominal.reply_ack_queue.queue_empty <-> (nominal.reply_ack_queue.tail = nominal.reply_ack_queue.head))
 
 -- Client never sends a new request while ack is still pending (reply_ack_sent must be TRUE)
-SPEC AG (nominal.client.client_request_state = sending -> nominal.client.reply_ack_sent)
+SPEC AG (nominal.client.client_request_state = sending & 
+        AX nominal.client.client_request_state = sent -> nominal.client.reply_ack_sent)
 
 -- Client never sends reply_ack without having received the reply first
 SPEC AG ((nominal.client.client_reply_ack_state = sending &
@@ -269,19 +278,15 @@ SPEC AG ((nominal.server.server_ack_state = sending &
 -- Server only receives reply_ack when the channel is non-empty
 SPEC AG ((nominal.server.server_reply_ack_state = receiving &
           AX nominal.server.server_reply_ack_state = received) ->
-         !nominal.reply_ack_queue.empty)
-
--- Cache can only be full when a reply has been sent and reply_ack not yet received
-SPEC AG (nominal.server.memory_cache = full -> nominal.server.server_ack_state = sent)
-
+         !nominal.reply_ack_queue.queue_empty)
 
 -- ==========================================================
 -- LIVENESS PROPERTIES
 -- ==========================================================
 -- System never deadlocks - queues always eventually reach a non-full, non-empty state
-SPEC AG (nominal.request_queue.empty -> AF !nominal.request_queue.empty)
-SPEC AG (nominal.ack_queue.empty -> AF !nominal.ack_queue.empty)
-SPEC AG (nominal.reply_ack_queue.empty -> AF !nominal.reply_ack_queue.empty)
+SPEC AG (nominal.request_queue.queue_empty -> AF !nominal.request_queue.queue_empty)
+SPEC AG (nominal.ack_queue.queue_empty -> AF !nominal.ack_queue.queue_empty)
+SPEC AG (nominal.reply_ack_queue.queue_empty -> AF !nominal.reply_ack_queue.queue_empty)
 
 -- If client wants to receive/send, it will eventually receive/send (no starvation)
 SPEC AG (nominal.client.client_ack_state = receiving -> AF nominal.client.client_ack_state = received)
@@ -296,9 +301,9 @@ SPEC AG (nominal.client.client_reply_ack_state = sending -> AF nominal.client.cl
 SPEC AG (nominal.server.server_reply_ack_state = receiving -> AF nominal.server.server_reply_ack_state = received)
 
 -- Queues never stay empty forever
-SPEC AG (nominal.request_queue.empty -> AF !nominal.request_queue.empty)
-SPEC AG (nominal.ack_queue.empty -> AF !nominal.ack_queue.empty)
-SPEC AG (nominal.reply_ack_queue.empty -> AF !nominal.reply_ack_queue.empty)
+SPEC AG (nominal.request_queue.queue_empty -> AF !nominal.request_queue.queue_empty)
+SPEC AG (nominal.ack_queue.queue_empty -> AF !nominal.ack_queue.queue_empty)
+SPEC AG (nominal.reply_ack_queue.queue_empty -> AF !nominal.reply_ack_queue.queue_empty)
 
 -- All parties make progress infinitely often
 SPEC AG (AF nominal.client.client_request_state   = sent)
@@ -343,7 +348,7 @@ SPEC AG (nominal.client.client_request_state = sent -> AF nominal.server.memory_
 SPEC AG (nominal.client.client_request_state = sent -> !nominal.client.reply_ack_sent)
 
 -- A non-empty reply_ack queue always results in server receiving it
-SPEC AG (!nominal.reply_ack_queue.empty -> AF nominal.server.server_reply_ack_state = received)
+SPEC AG (!nominal.reply_ack_queue.queue_empty -> AF nominal.server.server_reply_ack_state = received)
 
 -- Queue head/tail advance correctly after transitions
 SPEC AG ((nominal.server.server_request_state = received) -> AF (nominal.server.request_toggle = nominal.request_queue.last_consumer_toggle))
@@ -364,25 +369,25 @@ SPEC AG ((nominal.server.server_ack_state = sending &
 
 -- Client cannot receive an ack unless server sent one
 SPEC AG ((nominal.client.client_ack_state = receiving &
-          AX nominal.client.client_ack_state = received) -> !nominal.ack_queue.empty)
+          AX nominal.client.client_ack_state = received) -> !nominal.ack_queue.queue_empty)
 
 -- ==========================================================
 -- TOGGLE SYNCHRONIZATION
 -- ==========================================================
 -- Toggles fire exactly when the corresponding transition occurs
-SPEC AG ((nominal.client.client_request_state = sending & !nominal.request_queue.full & nominal.client.reply_ack_sent) ->
+SPEC AG ((nominal.client.client_request_state = sending & !nominal.request_queue.queue_full & nominal.client.reply_ack_sent) ->
          AF nominal.client.request_toggle != nominal.request_queue.last_producer_toggle)
-SPEC AG ((nominal.client.client_ack_state = receiving & !nominal.ack_queue.empty) ->
+SPEC AG ((nominal.client.client_ack_state = receiving & !nominal.ack_queue.queue_empty) ->
          AF nominal.client.ack_toggle != nominal.ack_queue.last_consumer_toggle)
 
-SPEC AG ((nominal.client.client_reply_ack_state = sending & !nominal.reply_ack_queue.full & nominal.client.ack_received) ->
+SPEC AG ((nominal.client.client_reply_ack_state = sending & !nominal.reply_ack_queue.queue_full & nominal.client.ack_received) ->
          AF nominal.client.reply_ack_toggle != nominal.reply_ack_queue.last_producer_toggle)
-SPEC AG ((nominal.server.server_request_state = receiving & !nominal.request_queue.empty) ->
+SPEC AG ((nominal.server.server_request_state = receiving & !nominal.request_queue.queue_empty) ->
          AF nominal.server.request_toggle != nominal.request_queue.last_consumer_toggle)
 
-SPEC AG ((nominal.server.server_ack_state = sending & !nominal.ack_queue.full & nominal.server.request_received) ->
+SPEC AG ((nominal.server.server_ack_state = sending & !nominal.ack_queue.queue_full & nominal.server.request_received) ->
          AF nominal.server.ack_toggle != nominal.ack_queue.last_producer_toggle)
-SPEC AG ((nominal.server.server_reply_ack_state = receiving & !nominal.reply_ack_queue.empty) ->
+SPEC AG ((nominal.server.server_reply_ack_state = receiving & !nominal.reply_ack_queue.queue_empty) ->
          AF nominal.server.reply_ack_toggle != nominal.reply_ack_queue.last_consumer_toggle)
 
 -- Queue last_*_toggle values track their respective module toggles
@@ -428,19 +433,19 @@ SPEC AG (AF nominal.server.server_reply_ack_state = receiving)
 -- REACHABILITY
 -- ==========================================================
 -- Queues never reach full (single-slot protocol)
-SPEC AG !nominal.request_queue.full
-SPEC AG !nominal.ack_queue.full
-SPEC AG !nominal.reply_ack_queue.full
+SPEC AG !nominal.request_queue.queue_full
+SPEC AG !nominal.ack_queue.queue_full
+SPEC AG !nominal.reply_ack_queue.queue_full
 
 -- All queues can be empty
-SPEC EF nominal.request_queue.empty
-SPEC EF nominal.ack_queue.empty
-SPEC EF nominal.reply_ack_queue.empty
+SPEC EF nominal.request_queue.queue_empty
+SPEC EF nominal.ack_queue.queue_empty
+SPEC EF nominal.reply_ack_queue.queue_empty
 
 -- All queues can be non-empty (and non-full)
-SPEC EF (!nominal.request_queue.empty & !nominal.request_queue.full)
-SPEC EF (!nominal.ack_queue.empty & !nominal.ack_queue.full)
-SPEC EF (!nominal.reply_ack_queue.empty & !nominal.reply_ack_queue.full)
+SPEC EF (!nominal.request_queue.queue_empty & !nominal.request_queue.queue_full)
+SPEC EF (!nominal.ack_queue.queue_empty & !nominal.ack_queue.queue_full)
+SPEC EF (!nominal.reply_ack_queue.queue_empty & !nominal.reply_ack_queue.queue_full)
 
 -- Cache can be full and can be free
 SPEC EF (nominal.server.memory_cache = full)
