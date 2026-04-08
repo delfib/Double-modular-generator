@@ -125,7 +125,7 @@ ASSIGN
             TRUE : server_request_state;
         esac;
 
-     next(server_ack_state) :=
+    next(server_ack_state) :=
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
