@@ -35,7 +35,7 @@ ASSIGN
     esac;
 
 DEFINE
-    full  := ((tail + 1) mod Q_SIZE = head);
+    full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 FAIRNESS
@@ -213,10 +213,10 @@ MODULE NominalRRA()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client       : process Client(request_queue, ack_queue, reply_ack_queue);
-    server       : process Server(request_queue, ack_queue, reply_ack_queue);
-    request_queue   : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
-    ack_queue       : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
+    client : process Client(request_queue, ack_queue, reply_ack_queue);
+    server : process Server(request_queue, ack_queue, reply_ack_queue);
+    request_queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
     reply_ack_queue : process Queue(Q_SIZE, client.reply_ack_toggle, server.reply_ack_toggle);
 
 
@@ -296,8 +296,8 @@ SPEC AG (nominal.client.client_reply_ack_state = sending -> AF nominal.client.cl
 SPEC AG (nominal.server.server_reply_ack_state = receiving -> AF nominal.server.server_reply_ack_state = received)
 
 -- Queues never stay empty forever
-SPEC AG (nominal.request_queue.empty > AF !nominal.request_queue.empty)
-SPEC AG (nominal.ack_queue.empty-> AF !nominal.ack_queue.empty)
+SPEC AG (nominal.request_queue.empty -> AF !nominal.request_queue.empty)
+SPEC AG (nominal.ack_queue.empty -> AF !nominal.ack_queue.empty)
 SPEC AG (nominal.reply_ack_queue.empty -> AF !nominal.reply_ack_queue.empty)
 
 -- All parties make progress infinitely often
@@ -446,3 +446,4 @@ SPEC EF (!nominal.reply_ack_queue.empty & !nominal.reply_ack_queue.full)
 SPEC EF (nominal.server.memory_cache = full)
 SPEC EF (nominal.server.memory_cache = free)
 
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RRA_Protocol/RRA_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
