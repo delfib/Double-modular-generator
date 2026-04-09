@@ -54,7 +54,6 @@ DEFINE
     queue_full  := ((tail + 1) mod Q_SIZE = head);
     queue_empty := (tail = head);
     request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];    -- has a server already consumed this request?
-    reply_ack_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];  -- has a server already consumed this reply_ack?
 
 FAIRNESS
     running
@@ -76,6 +75,8 @@ VAR
     ack_received            : boolean;   -- TRUE once server acknowledgement has been received (guards new request)
     reply_ack_sent          : boolean;   -- TRUE once reply_ack has been sent
 
+    ack_source              : {none, srv0, srv1};   -- Tracks which server sent the ack, so the reply_ack can be routed back correctly
+
 ASSIGN
     init(client_request_state)   := sending;
     init(client_ack_state)       := receiving;
@@ -85,6 +86,7 @@ ASSIGN
     init(reply_ack_toggle)       := FALSE;
     init(ack_received)           := FALSE;
     init(reply_ack_sent)         := TRUE;
+    init(ack_source)             := none;
 
     next(client_request_state) := case
         client_request_state = sending & request_queue.queue_full : sending;
@@ -137,14 +139,23 @@ ASSIGN
         TRUE : reply_ack_sent;
     esac;
 
+    -- Track which server sent the ack to our request, so reply_ack can be routed to them
+    next(ack_source) := case
+        client_request_state = sent & client_ack_state = receiving & ack_queue.last_producer_toggle[0] != ack_queue.last_consumer_toggle[0] : srv0; 
+        client_request_state = sent & client_ack_state = receiving & ack_queue.last_producer_toggle[1] != ack_queue.last_consumer_toggle[1] : srv1; 
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : none;  -- reset after reply_ack sent
+        -- client_request_state = sending & !request_queue.queue_full & reply_ack_sent : none;  -- reset after a new request is sent
+
+        TRUE : ack_source;
+    esac;
+
 FAIRNESS
     running
-
 
 -- =========================================================
 -- Server module
 -- =========================================================
-MODULE Server(request_queue, ack_queue, reply_ack_queue, server_id)
+MODULE Server(request_queue, ack_queue, reply_ack_queue, reply_ack_owner, server_id)
 VAR
     server_request_state    : {receiving, received};
     server_ack_state        : {sending, sent};
@@ -188,7 +199,7 @@ ASSIGN
     -- Server waits for the reply_ack from the client, then frees the cache.
     next(server_reply_ack_state) := case
         server_reply_ack_state = receiving & reply_ack_queue.queue_empty : receiving;
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & !reply_ack_queue.reply_ack_consumed : received;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : received;   -- only if this reply_ack belongs to us
         server_reply_ack_state = received & !reply_ack_queue.queue_empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle[server_id] : receiving;
         server_reply_ack_state = received & reply_ack_queue.queue_empty : received;
         TRUE : server_reply_ack_state;
@@ -205,7 +216,7 @@ ASSIGN
     esac;
 
     next(reply_ack_toggle) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & !reply_ack_queue.reply_ack_consumed : !reply_ack_toggle;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
@@ -216,7 +227,7 @@ ASSIGN
     esac;
 
     next(reply_ack_received) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & !reply_ack_queue.reply_ack_consumed : TRUE;   -- reply ack received
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : TRUE;   -- reply ack received
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed : FALSE;  -- new request received
         TRUE : reply_ack_received;
     esac;
@@ -224,7 +235,7 @@ ASSIGN
     -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & !reply_ack_queue.reply_ack_consumed : free;  -- reply_ack received, free cache
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : free;  -- reply_ack received, free cache
         TRUE : memory_cache;
     esac;
 
@@ -247,8 +258,8 @@ VAR
     reply_ack_cons_toggles : array 0..1 of boolean;
 
     client  : process Client(request_queue, ack_queue, reply_ack_queue);
-    server1 : process Server(request_queue, ack_queue, reply_ack_queue, 0);
-    server2 : process Server(request_queue, ack_queue, reply_ack_queue, 1);
+    server1 : process Server(request_queue, ack_queue, reply_ack_queue, client.ack_source, 0);
+    server2 : process Server(request_queue, ack_queue, reply_ack_queue, client.ack_source, 1);
 
     request_queue : process Queue(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue     : process Queue(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
@@ -329,7 +340,6 @@ SPEC AG ((extended.server1.server_request_state = receiving &
 
 -- If server cache is full, reply_ack must not have been received yet
 SPEC AG (extended.server1.memory_cache = full -> !extended.server1.reply_ack_received)
-
 
 -- ==========================================================
 -- LIVENESS PROPERTIES
@@ -476,7 +486,7 @@ SPEC AG ((extended.server1.server_request_state = receiving & !extended.request_
 
 SPEC AG ((extended.server1.server_ack_state = sending & !extended.ack_queue.queue_full & extended.server1.request_received) ->
          AF extended.server1.ack_toggle != extended.ack_queue.last_producer_toggle[0])
-SPEC AG ((extended.server1.server_reply_ack_state = receiving & !extended.reply_ack_queue.queue_empty & !extended.reply_ack_queue.reply_ack_consumed) ->
+SPEC AG ((extended.server1.server_reply_ack_state = receiving & !extended.reply_ack_queue.queue_empty & extended.server1.reply_ack_owner = (extended.server1.server_id = 0 ? srv0 : srv1)) ->
          AF extended.server1.reply_ack_toggle != extended.reply_ack_queue.last_consumer_toggle[0])
 
 -- Request Queue's last_producer_toggle tracks client's request_toggle after production
