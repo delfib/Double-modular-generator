@@ -76,7 +76,7 @@ VAR
     reply_ack_sent          : boolean;   -- TRUE once reply_ack has been sent
 
     ack_source              : {none, srv0, srv1};   -- Tracks which server sent the ack, so the reply_ack can be routed back correctly
-    pending_reply_ack : boolean;   -- Waiting for server to consume reply_ack
+    pending_reply_ack : boolean;            -- Waiting for server to consume reply_ack
     reply_ack_consume_marker : boolean;     -- Snapshot of server consumer toggle at reply_ack time
 
 ASSIGN
@@ -358,6 +358,28 @@ SPEC AG ((extended.server1.server_request_state = receiving &
 -- If server cache is full, reply_ack must not have been received yet
 SPEC AG (extended.server1.memory_cache = full -> !extended.server1.reply_ack_received)
 
+-- Client never sends request while pending_reply_ack is TRUE
+SPEC AG (extended.client.pending_reply_ack -> 
+         AX extended.client.client_request_state != sent)
+
+-- pending_reply_ack and reply_ack_sent work together correctly
+SPEC AG (extended.client.pending_reply_ack -> extended.client.reply_ack_sent)
+
+-- Only the server matching ack_source can consume the reply_ack
+SPEC AG ((extended.server1.server_reply_ack_state = receiving &
+          AX extended.server1.server_reply_ack_state = received) ->
+         extended.client.ack_source = srv0)
+
+SPEC AG ((extended.server2.server_reply_ack_state = receiving &
+          AX extended.server2.server_reply_ack_state = received) ->
+         extended.client.ack_source = srv1)
+
+-- If server1's cache is full, it must be because it sent an ack and hasn't received reply_ack yet
+SPEC AG (extended.server1.memory_cache = full -> (!extended.server1.reply_ack_received))
+
+-- Both servers cannot have full caches simultaneously (single client, one transaction at a time)
+SPEC AG !(extended.server1.memory_cache = full & extended.server2.memory_cache = full)
+
 -- ==========================================================
 -- LIVENESS PROPERTIES
 -- ==========================================================
@@ -402,6 +424,21 @@ SPEC AG (!extended.client.reply_ack_sent -> AF extended.client.reply_ack_sent)
 
 -- ack_received eventually becomes FALSE again after going TRUE
 SPEC AG (extended.client.ack_received -> AF !extended.client.ack_received)
+
+-- Both servers infinitely often reach free cache state
+SPEC AG (AF extended.server1.memory_cache = free)
+SPEC AG (AF extended.server2.memory_cache = free)
+
+-- pending_reply_ack eventually becomes FALSE after becoming TRUE
+SPEC AG (extended.client.pending_reply_ack -> AF !extended.client.pending_reply_ack)
+
+-- If pending_reply_ack is TRUE, the correct server will eventually consume the reply_ack
+SPEC AG ((extended.client.pending_reply_ack & extended.client.ack_source = srv0) ->
+         AF extended.server1.server_reply_ack_state = received)
+
+-- After pending_reply_ack becomes FALSE, client can eventually send a new request
+SPEC AG (!extended.client.pending_reply_ack & extended.client.reply_ack_sent ->
+         AF extended.client.client_request_state = sent)
 
 
 -- ==========================================================
@@ -485,6 +522,13 @@ SPEC AG (extended.server1.server_ack_state = sent -> AF extended.client.client_a
 SPEC AG (extended.client.client_request_state = sent -> 
          AF (extended.server1.server_ack_state = sent | extended.server2.server_ack_state = sent))
 
+-- Reply_ack is routed to the correct server based on ack_source
+SPEC AG ((extended.client.client_reply_ack_state = sent & extended.client.ack_source = srv0) ->
+         AF extended.server1.server_reply_ack_state = received)
+
+-- The server whose cache is full must be the one to receive the next reply_ack
+SPEC AG (extended.server1.memory_cache = full ->
+         AF extended.server1.server_reply_ack_state = received)
 
 -- ==========================================================
 -- TOGGLE SYNCHRONIZATION
@@ -562,7 +606,6 @@ SPEC AG !extended.request_queue.queue_full
 SPEC AG !extended.ack_queue.queue_full
 SPEC AG !extended.reply_ack_queue.queue_full
 
-
 -- All queues can be empty
 SPEC EF extended.request_queue.queue_empty
 SPEC EF extended.ack_queue.queue_empty
@@ -573,5 +616,29 @@ SPEC EF (!extended.request_queue.queue_empty & !extended.request_queue.queue_ful
 SPEC EF (!extended.ack_queue.queue_empty & !extended.ack_queue.queue_full)
 SPEC EF (!extended.reply_ack_queue.queue_empty & !extended.reply_ack_queue.queue_full)
 
+-- Both servers can reach full cache state
+SPEC EF (extended.server1.memory_cache = full)
+SPEC EF (extended.server2.memory_cache = full)
+
+-- Both servers can reach free cache state
+SPEC EF (extended.server1.memory_cache = free)
+SPEC EF (extended.server2.memory_cache = free)
+
+-- All possible ack_source values are reachable
+SPEC EF (extended.client.ack_source = none)
+SPEC EF (extended.client.ack_source = srv0)
+SPEC EF (extended.client.ack_source = srv1)
+
+-- Both servers can process requests
+SPEC EF (extended.server1.server_request_state = received)
+SPEC EF (extended.server2.server_request_state = received)
+
+-- Both servers can send acks
+SPEC EF (extended.server1.server_ack_state = sent)
+SPEC EF (extended.server2.server_ack_state = sent)
+
+-- Both servers can receive reply_acks
+SPEC EF (extended.server1.server_reply_ack_state = received)
+SPEC EF (extended.server2.server_reply_ack_state = received)
 
 -- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RRA_Protocol/RRA_ProtocolExtended.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
