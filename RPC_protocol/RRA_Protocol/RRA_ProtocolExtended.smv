@@ -77,6 +77,7 @@ VAR
 
     ack_source              : {none, srv0, srv1};   -- Tracks which server sent the ack, so the reply_ack can be routed back correctly
     pending_reply_ack : boolean;   -- Waiting for server to consume reply_ack
+    reply_ack_consume_marker : boolean;     -- Snapshot of server consumer toggle at reply_ack time
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -89,6 +90,7 @@ ASSIGN
     init(reply_ack_sent)         := TRUE;
     init(ack_source)             := none;
     init(pending_reply_ack)      := FALSE;
+    init(reply_ack_consume_marker)  := FALSE;
 
     next(client_request_state) := case
         client_request_state = sending & request_queue.queue_full : sending;
@@ -152,10 +154,16 @@ ASSIGN
     next(pending_reply_ack) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;   -- We must wait after sending a reply_ack
         pending_reply_ack & (
-                (ack_source = srv0 & reply_ack_queue.queue_empty) |
-                (ack_source = srv1 & reply_ack_queue.queue_empty)
-            ) : FALSE;  -- When the CORRECT server consumes it, we stop waiting
+            (ack_source = srv0 & reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker) |
+            (ack_source = srv1 & reply_ack_queue.last_consumer_toggle[1] != reply_ack_consume_marker)
+        ) : FALSE;  -- When the correct server consumes it, we stop waiting
         TRUE : pending_reply_ack;
+    esac;
+
+    next(reply_ack_consume_marker) := case
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv0 : reply_ack_queue.last_consumer_toggle[0];
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv1 : reply_ack_queue.last_consumer_toggle[1];
+        TRUE : reply_ack_consume_marker;
     esac;
 
 FAIRNESS
@@ -566,18 +574,4 @@ SPEC EF (!extended.ack_queue.queue_empty & !extended.ack_queue.queue_full)
 SPEC EF (!extended.reply_ack_queue.queue_empty & !extended.reply_ack_queue.queue_full)
 
 
--- ==========================================================
--- MUTUAL EXCLUSION PROPERTIES (KEY FOR MULTI-SERVER)
--- ==========================================================
-
--- Only one server can process the same request
-SPEC AG !(extended.server1.server_request_state = received & extended.server2.server_request_state = received &
-          extended.server1.request_toggle = extended.request_queue.last_consumer_toggle[0] &
-          extended.server2.request_toggle = extended.request_queue.last_consumer_toggle[1])
-
--- Only one server can process the same reply_ack
-SPEC AG !(extended.server1.server_reply_ack_state = received & extended.server2.server_reply_ack_state = received &
-          extended.server1.reply_ack_toggle = extended.reply_ack_queue.last_consumer_toggle[0] &
-          extended.server2.reply_ack_toggle = extended.reply_ack_queue.last_consumer_toggle[1])
-
--- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RRA_Protocol/RRA_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RRA_Protocol/RRA_ProtocolExtended.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
