@@ -484,7 +484,7 @@ SPEC AG (extended.client.client_request_state = sent ->
 SPEC AG (extended.client.client_request_state = sent -> !extended.client.reply_ack_sent)
 
 -- A non-empty reply_ack queue always results in one server receiving it
-SPEC AG (!extended.reply_ack_queue.queue_empty -> AF extended.server1.server_reply_ack_state = received)
+SPEC AG (!extended.reply_ack_queue.queue_empty -> AF (extended.server1.server_reply_ack_state = received | extended.server2.server_reply_ack_state = received))
 
 -- If the servers enter 'received'/'sent' state, the queue head/tail must eventually advance
 SPEC AG ((extended.server1.server_request_state = received) -> 
