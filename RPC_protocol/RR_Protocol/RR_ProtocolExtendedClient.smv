@@ -96,18 +96,18 @@ ASSIGN
     esac;
 
     next(request_toggle) := case
-        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;
+        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(ack_toggle) := case
-        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : !ack_toggle;
         TRUE : ack_toggle;
     esac;
 
     next(ack_received) := case
-        client_request_state = sending & !request_queue.full & ack_received : FALSE;    -- false because a new request has just been sent
-        client_ack_state = receiving & !ack_queue.empty                     : TRUE;      -- true because a new ack has been received
+        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : FALSE;    -- false because a new request has just been sent
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : TRUE;      -- true because a new ack has been received
         TRUE : ack_received;
     esac;
 
@@ -312,7 +312,6 @@ SPEC AG !((extended.client1.client_ack_state = receiving & AX extended.client1.c
           (extended.client2.client_ack_state = receiving & AX extended.client2.client_ack_state = received))
 
 -- request_source is set consistently with whose toggle changed
-
 -- Client cannot consume an ack it was not waiting for (request_sent is the guard)
 SPEC AG ((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) ->
     extended.client1.request_sent)
