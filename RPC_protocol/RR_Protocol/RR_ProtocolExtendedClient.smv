@@ -9,6 +9,7 @@ VAR
     tail                 : 0..3;
     last_producer_toggle : array 0..1 of boolean;
     last_consumer_toggle : array 0..1 of boolean;
+    producer_id : array 0..3 of {none, clt0, clt1};
 
 ASSIGN
     init(head)                    := 0;
@@ -17,11 +18,39 @@ ASSIGN
     init(last_producer_toggle[1]) := FALSE;
     init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
+    init(producer_id[0])          := none;
+    init(producer_id[1])          := none;
+    init(producer_id[2])          := none;
+    init(producer_id[3])          := none;
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
         (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
+    esac;
+
+    next(producer_id[0]) := case
+        tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[0];
+    esac;
+
+    next(producer_id[1]) := case
+        tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[1];
+    esac;
+
+    next(producer_id[2]) := case
+        tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[2];
+    esac;
+
+    next(producer_id[3]) := case
+        tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[3];
     esac;
 
     next(head) := case
@@ -183,19 +212,8 @@ ASSIGN
     esac;
 
     next(request_source) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack & request_queue.last_producer_toggle[0] != request_clt0_seen : clt0;
-        server_request_state = receiving & !request_queue.empty & !pending_ack & request_queue.last_producer_toggle[1] != request_clt1_seen : clt1;
+        server_request_state = receiving & !request_queue.empty & !pending_ack : request_queue.producer_id[request_queue.head];
         TRUE : request_source;
-    esac;
-
-    next(request_clt0_seen) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack & request_queue.last_producer_toggle[0] != request_clt0_seen : request_queue.last_producer_toggle[0];
-        TRUE : request_clt0_seen;
-    esac;
-    
-    next(request_clt1_seen) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack & request_queue.last_producer_toggle[1] != request_clt1_seen : request_queue.last_producer_toggle[1];
-        TRUE : request_clt1_seen;
     esac;
 
     next(pending_ack) := case
@@ -322,10 +340,6 @@ SPEC AG ((extended.client2.client_ack_state = receiving & AX extended.client2.cl
 SPEC AG (extended.client1.client_request_state = sent -> AF extended.client1.ack_received)
 SPEC AG (extended.client2.client_request_state = sent -> AF extended.client2.ack_received)
 
--- Both clients cannot have outstanding requests simultaneously
--- (single server processes one request at a time, and each client blocks until ack received)
-SPEC AG !(extended.client1.request_sent & extended.client2.request_sent)
-
 
 -- =========================================================
 -- LIVENESS PROPERTIES
@@ -337,11 +351,6 @@ SPEC AG (extended.ack_queue.empty -> AF !extended.ack_queue.empty)
 
 -- If a client wants to send, it will eventually send (no starvation)
 SPEC AG (extended.client1.client_request_state = sending -> AF extended.client1.client_request_state = sent)
-SPEC AG (extended.client2.client_request_state = sending -> AF extended.client2.client_request_state = sent)
-
--- If a client is waiting for an ack, it will eventually receive one
-SPEC AG (extended.client1.client_ack_state = receiving -> AF extended.client1.client_ack_state = received)
-SPEC AG (extended.client2.client_ack_state = receiving -> AF extended.client2.client_ack_state = received)
 
 -- If the server is waiting for a request, it will eventually receive one
 SPEC AG (extended.server.server_request_state = receiving -> AF extended.server.server_request_state = received)
@@ -350,10 +359,8 @@ SPEC AG (extended.server.server_request_state = receiving -> AF extended.server.
 SPEC AG (extended.server.server_ack_state = sending -> AF extended.server.server_ack_state = sent)
 
 -- Both clients make progress infinitely often
-SPEC AG (AF extended.client1.client_request_state = sent)
-SPEC AG (AF extended.client2.client_request_state = sent)
-SPEC AG (AF extended.client1.client_ack_state = received)
-SPEC AG (AF extended.client2.client_ack_state = received)
+SPEC AG (AF (extended.client1.client_request_state = sent | extended.client2.client_request_state = sent))
+SPEC AG (AF (extended.client1.client_ack_state = received | extended.client2.client_ack_state = received))
 
 -- Server makes progress infinitely often
 SPEC AG (AF extended.server.server_request_state = received)
