@@ -118,7 +118,7 @@ ASSIGN
 
     next(client_ack_state) := case
         client_ack_state = receiving & ack_queue.empty : receiving;
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : received;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : received;
         client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle[client_id] : receiving;
         client_ack_state = received & ack_queue.empty : received;
         TRUE : client_ack_state;
@@ -130,21 +130,28 @@ ASSIGN
     esac;
 
     next(ack_toggle) := case
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : !ack_toggle;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : !ack_toggle;
         TRUE : ack_toggle;
     esac;
 
     next(ack_received) := case
         client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : FALSE;    -- false because a new request has just been sent
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : TRUE;      -- true because a new ack has been received
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : TRUE;          -- true because a new ack has been received
         TRUE : ack_received;
     esac;
 
     next(request_sent) := case
         client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;   -- a request was just sent 
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : FALSE; -- an ack for that request was just received
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;    -- an ack for that request was just received
         TRUE : request_sent;
     esac;
+    
+DEFINE
+    self_id := case
+        client_id = 0 : clt0;
+        client_id = 1 : clt1;
+    esac;
+
 FAIRNESS
     running
 

@@ -275,8 +275,6 @@ FAIRNESS
 -- =========================================================
 -- Client Extended
 -- =========================================================
-
-
 MODULE ClientExtended(request_queue, ack_queue, ack_owner, client_id)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
@@ -285,7 +283,7 @@ VAR
     request_toggle : boolean;  
     ack_toggle : boolean;    
     ack_received : boolean;
-    request_sent         : boolean;
+    request_sent : boolean;
 
 ASSIGN
     init(fault_mode) := none;
@@ -295,7 +293,7 @@ ASSIGN
     init(request_toggle) := FALSE;
     init(ack_toggle) := FALSE;
     init(ack_received) := TRUE;
-    init(request_sent)         := FALSE;
+    init(request_sent) := FALSE;
 
     next(fault_mode) :=
         case
@@ -318,7 +316,7 @@ ASSIGN
     next(client_ack_state) :=
         case
             client_ack_state = receiving & ack_queue.empty : receiving;
-            client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : received;
+            client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : received;
             client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle[client_id] : receiving;
             client_ack_state = received & ack_queue.empty : received;
             TRUE : client_ack_state;
@@ -333,21 +331,29 @@ ASSIGN
 
     next(ack_toggle) := case
         fault_mode = none &
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : !ack_toggle;
+                client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : !ack_toggle;
         TRUE : ack_toggle;                                                      
     
     esac;
 
     next(ack_received) := case
         client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : FALSE;       -- false because a new request has just been sent
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : TRUE;          -- true because a new ack has been received
+                client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : TRUE;          -- true because a new ack has been received
         TRUE : ack_received;           
     esac;
 
     next(request_sent) := case
-        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;   -- a request was just sent 
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : FALSE; -- an ack for that request was just received
+        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;
         TRUE : request_sent;
+    esac;
+    
+
+DEFINE
+    self_id := case
+        client_id = 0 : clt0;
+        client_id = 1 : clt1;
+        client_id = 2 : clt2;
     esac;
 FAIRNESS
     running
