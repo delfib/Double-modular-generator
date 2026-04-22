@@ -234,11 +234,11 @@ VAR
 -- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
-    producer_id : array 0..3 of {none, clt0, clt1};
+    producer_id : array 0..3 of {none, clt0, clt1, clt2};
     head : 0..3;
     tail : 0..3;
-    last_producer_toggle : array 0..1 of boolean;
-    last_consumer_toggle : array 0..1 of boolean;
+    last_producer_toggle : array 0..2 of boolean;
+    last_consumer_toggle : array 0..2 of boolean;
 
 ASSIGN
     init(head) := 0;
@@ -249,42 +249,50 @@ ASSIGN
     init(producer_id[3]) := none;
         init(last_producer_toggle[0]) := FALSE;
     init(last_producer_toggle[1]) := FALSE;
+    init(last_producer_toggle[2]) := FALSE;
         init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
+    init(last_consumer_toggle[2]) := FALSE;
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
         (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[2] != last_producer_toggle[2]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
 
     next(producer_id[0]) := case
         tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 0 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[0];
     esac;
 
     next(producer_id[1]) := case
         tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 1 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[1];
     esac;
 
     next(producer_id[2]) := case
         tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 2 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[2];
     esac;
 
     next(producer_id[3]) := case
         tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 3 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[3];
     esac;
 
     next(head) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : (head + 1) mod Q_SIZE;
         (consumer_toggles[1] != last_consumer_toggle[1]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[2] != last_consumer_toggle[2]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
@@ -298,6 +306,11 @@ ASSIGN
         TRUE : last_producer_toggle[1];
     esac;
 
+    next(last_producer_toggle[2]) := case
+        (producer_toggles[2] != last_producer_toggle[2]) : producer_toggles[2];
+        TRUE : last_producer_toggle[2];
+    esac;
+
         next(last_consumer_toggle[0]) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
         TRUE : last_consumer_toggle[0];
@@ -308,8 +321,13 @@ ASSIGN
         TRUE : last_consumer_toggle[1];
     esac;
 
+    next(last_consumer_toggle[2]) := case
+        (consumer_toggles[2] != last_consumer_toggle[2]) : consumer_toggles[2];
+        TRUE : last_consumer_toggle[2];
+    esac;
+
 DEFINE
-    request_produced := last_producer_toggle[0] != producer_toggles[0] | last_producer_toggle[1] != producer_toggles[1];
+    request_produced := last_producer_toggle[0] != producer_toggles[0] | last_producer_toggle[1] != producer_toggles[1] | last_producer_toggle[2] != producer_toggles[2];
     queue_full := ((tail + 1) mod Q_SIZE = head);
     queue_empty := (tail = head);
 
@@ -318,7 +336,7 @@ FAIRNESS
 
 
 -- =========================================================
--- Client Extended
+-- Extended Client
 -- =========================================================
 MODULE ClientExtended(request_queue, ack_queue, reply_ack_queue, client_id, ack_owner)
 VAR
@@ -440,8 +458,8 @@ DEFINE
     self_id := case
         client_id = 0 : clt0;
         client_id = 1 : clt1;
+        client_id = 2 : clt2;
     esac;
-
 FAIRNESS
     running
 
@@ -570,15 +588,16 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    request_prod_toggles : array 0..1 of boolean;
-    request_cons_toggles : array 0..1 of boolean;
-    ack_prod_toggles     : array 0..1 of boolean;
-    ack_cons_toggles     : array 0..1 of boolean;
-    reply_ack_prod_toggles : array 0..1 of boolean;
-    reply_ack_cons_toggles : array 0..1 of boolean;
+    request_prod_toggles : array 0..2 of boolean;
+    request_cons_toggles : array 0..2 of boolean;
+    ack_prod_toggles     : array 0..2 of boolean;
+    ack_cons_toggles     : array 0..2 of boolean;
+    reply_ack_prod_toggles : array 0..2 of boolean;
+    reply_ack_cons_toggles : array 0..2 of boolean;
 
     client1  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 0);
     client2  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 1);
+    client3  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 2);
     server : process ServerExtended(request_queue, ack_queue, reply_ack_queue);
 
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
@@ -588,18 +607,23 @@ VAR
 ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
     request_prod_toggles[1] := client2.request_toggle; 
+    request_prod_toggles[2] := client3.request_toggle;
     request_cons_toggles[0] := server.request_toggle;
-    request_cons_toggles[1] := FALSE;     -- dummy, stays FALSE forever
-
+    request_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
+    request_cons_toggles[2] := FALSE;   -- dummy, stays FALSE forever
     ack_prod_toggles[0] := server.ack_toggle;
     ack_prod_toggles[1] := FALSE;     -- dummy, stays FALSE forever
+    ack_prod_toggles[2] := FALSE;   -- dummy, stays FALSE forever
     ack_cons_toggles[0] := client1.ack_toggle;
     ack_cons_toggles[1] := client2.ack_toggle; 
+    ack_cons_toggles[2] := client3.ack_toggle;
 
     reply_ack_prod_toggles[0] := client1.reply_ack_toggle;
     reply_ack_prod_toggles[1] := client2.reply_ack_toggle;
+    reply_ack_prod_toggles[2] := client3.reply_ack_toggle;
     reply_ack_cons_toggles[0] := server.reply_ack_toggle;
     reply_ack_cons_toggles[1] := FALSE;     -- dummy, stays FALSE forever
+    reply_ack_cons_toggles[2] := FALSE;     -- dummy, stays FALSE forever
 
 
 -- =========================================================
