@@ -230,7 +230,7 @@ ASSIGN
     -- Server waits for the reply_ack from the client, then frees the cache.
     next(server_reply_ack_state) := case
         server_reply_ack_state = receiving & reply_ack_queue.queue_empty : receiving;
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : received;   -- only if this reply_ack belongs to us
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : received;   -- only if this reply_ack belongs to us
         server_reply_ack_state = received & !reply_ack_queue.queue_empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle[server_id] : receiving;
         server_reply_ack_state = received & reply_ack_queue.queue_empty : received;
         TRUE : server_reply_ack_state;
@@ -247,7 +247,7 @@ ASSIGN
     esac;
 
     next(reply_ack_toggle) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : !reply_ack_toggle;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
@@ -258,7 +258,7 @@ ASSIGN
     esac;
 
     next(reply_ack_received) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : TRUE;   -- reply ack received
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : TRUE;   -- reply ack received
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed : FALSE;  -- new request received
         TRUE : reply_ack_received;
     esac;
@@ -266,8 +266,14 @@ ASSIGN
     -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = (server_id = 0 ? srv0 : srv1) : free;  -- reply_ack received, free cache
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : free;  -- reply_ack received, free cache
         TRUE : memory_cache;
+    esac;
+
+DEFINE
+    self_id := case
+        server_id = 0 : srv0;
+        server_id = 1 : srv1;
     esac;
 
 FAIRNESS
