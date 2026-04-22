@@ -176,7 +176,7 @@ VAR
     tail : 0..3;
     last_producer_toggle : array 0..2 of boolean;  -- last toggle value we saw
     last_consumer_toggle : array 0..2 of boolean;
-    producer_id : array 0..3 of {none, clt0, clt1};
+    producer_id : array 0..3 of {none, clt0, clt1, clt2};
 
 ASSIGN
     init(head) := 0;
@@ -187,10 +187,10 @@ ASSIGN
         init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
     init(last_consumer_toggle[2]) := FALSE;
-    init(producer_id[0])          := none;
-    init(producer_id[1])          := none;
-    init(producer_id[2])          := none;
-    init(producer_id[3])          := none;
+    init(producer_id[0]) := none;
+    init(producer_id[1]) := none;
+    init(producer_id[2]) := none;
+    init(producer_id[3]) := none;
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -202,24 +202,28 @@ ASSIGN
     next(producer_id[0]) := case
         tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 0 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[0];
     esac;
 
     next(producer_id[1]) := case
         tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 1 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[1];
     esac;
 
     next(producer_id[2]) := case
         tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 2 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[2];
     esac;
 
     next(producer_id[3]) := case
         tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 3 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[3];
     esac;
 
@@ -261,7 +265,7 @@ ASSIGN
     esac;
 
 DEFINE
-    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1] | last_consumer_toggle[2] != consumer_toggles[2];
+    request_produced := last_producer_toggle[0] != producer_toggles[0] | last_producer_toggle[1] != producer_toggles[1] | last_producer_toggle[2] != producer_toggles[2];
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
