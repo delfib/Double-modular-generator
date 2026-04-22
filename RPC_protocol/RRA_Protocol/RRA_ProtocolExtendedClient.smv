@@ -104,6 +104,8 @@ VAR
     ack_received            : boolean;   -- TRUE once server acknowledgement has been received (guards new request)
     reply_ack_sent          : boolean;   -- TRUE once reply_ack has been sent   
     request_sent            : boolean;
+    pending_reply_ack       : boolean;   -- Waiting for server to consume reply_ack
+    reply_ack_consume_marker : boolean;  -- Snapshot of server consumer toggle at reply_ack time
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -115,10 +117,12 @@ ASSIGN
     init(ack_received)           := FALSE;
     init(reply_ack_sent)         := TRUE;
     init(request_sent)           := FALSE;
+    init(pending_reply_ack)      := FALSE;
+    init(reply_ack_consume_marker)  := FALSE;
 
     next(client_request_state) := case
         client_request_state = sending & request_queue.queue_full : sending;
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !request_queue.request_produced : sent;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : sent;
         client_request_state = sent & !request_queue.queue_full & request_toggle = request_queue.last_producer_toggle[client_id] : sending;
         client_request_state = sent & request_queue.queue_full : sent;
         TRUE : client_request_state;
@@ -141,7 +145,7 @@ ASSIGN
     esac;
 
     next(request_toggle) := case
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !request_queue.request_produced : !request_toggle;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : !request_toggle;
         TRUE : request_toggle;
     esac;
 
@@ -163,14 +167,27 @@ ASSIGN
 
     next(reply_ack_sent) :=  case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;  -- reply_ack just sent
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !request_queue.request_produced : FALSE;   -- new request just sent
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : FALSE;   -- new request just sent
         TRUE : reply_ack_sent;
     esac;
 
      next(request_sent) := case
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !request_queue.request_produced : TRUE;   -- a request was just sent 
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : TRUE;   -- a request was just sent 
         client_ack_state = receiving & !ack_queue.queue_empty & request_sent & ack_owner = (client_id = 0 ? clt0 : clt1) : FALSE; -- an ack for that request was just received
         TRUE : request_sent;
+    esac;
+
+    next(pending_reply_ack) := case
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;   -- We must wait after sending a reply_ack
+        pending_reply_ack & (
+            (reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker)
+        ) : FALSE;  -- When the server consumes it, we stop waiting
+        TRUE : pending_reply_ack;
+    esac;
+
+    next(reply_ack_consume_marker) := case
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : reply_ack_queue.last_consumer_toggle[0];
+        TRUE : reply_ack_consume_marker;
     esac;
 
 FAIRNESS
@@ -294,7 +311,7 @@ ASSIGN
 FAIRNESS
     running
 
-
+    
 -- =========================================================
 -- System wrapper
 -- =========================================================
@@ -341,5 +358,371 @@ MODULE main
 VAR
     extended : ExtendedRRA();
 
+
+-- ==========================================================
+-- SAFETY PROPERTIES
+-- ==========================================================
+
+-- Queues tail and head are always within bounds
+SPEC AG (extended.request_queue.head >= 0 & extended.request_queue.head < extended.Q_SIZE)
+SPEC AG (extended.request_queue.tail   >= 0 & extended.request_queue.tail < extended.Q_SIZE)
+SPEC AG (extended.ack_queue.head >= 0 & extended.ack_queue.head < extended.Q_SIZE)
+SPEC AG (extended.ack_queue.tail >= 0 & extended.ack_queue.tail < extended.Q_SIZE)
+SPEC AG (extended.reply_ack_queue.head >= 0 & extended.reply_ack_queue.head < extended.Q_SIZE)
+SPEC AG (extended.reply_ack_queue.tail >= 0 & extended.reply_ack_queue.tail < extended.Q_SIZE)
+
+-- Full and empty are mutually exclusive for all queues
+SPEC AG !(extended.request_queue.queue_full & extended.request_queue.queue_empty)
+SPEC AG !(extended.ack_queue.queue_full & extended.ack_queue.queue_empty)
+SPEC AG !(extended.reply_ack_queue.queue_full & extended.reply_ack_queue.queue_empty)
+
+-- Queue full/empty definitions are correct
+SPEC AG (extended.request_queue.queue_full <-> ((extended.request_queue.tail + 1) mod extended.Q_SIZE = extended.request_queue.head))
+SPEC AG (extended.request_queue.queue_empty <-> (extended.request_queue.tail = extended.request_queue.head))
+SPEC AG (extended.ack_queue.queue_full <-> ((extended.ack_queue.tail + 1) mod extended.Q_SIZE = extended.ack_queue.head))
+SPEC AG (extended.ack_queue.queue_empty <-> (extended.ack_queue.tail = extended.ack_queue.head))
+SPEC AG (extended.reply_ack_queue.queue_full <-> ((extended.reply_ack_queue.tail + 1) mod extended.Q_SIZE = extended.reply_ack_queue.head))
+SPEC AG (extended.reply_ack_queue.queue_empty <-> (extended.reply_ack_queue.tail = extended.reply_ack_queue.head))
+
+-- Client1 never sends a new request while reply_ack is still pending
+SPEC AG (extended.client1.client_request_state = sending & 
+         AX extended.client1.client_request_state = sent -> extended.client1.reply_ack_sent)
+
+-- Client2 never sends a new request while reply_ack is still pending
+SPEC AG (extended.client2.client_request_state = sending & 
+         AX extended.client2.client_request_state = sent -> extended.client2.reply_ack_sent)
+
+-- Client1 never sends reply_ack without having received the reply first
+SPEC AG ((extended.client1.client_reply_ack_state = sending &
+          AX extended.client1.client_reply_ack_state = sent) ->
+         extended.client1.ack_received)
+
+-- Client2 never sends reply_ack without having received the reply first
+SPEC AG ((extended.client2.client_reply_ack_state = sending &
+          AX extended.client2.client_reply_ack_state = sent) ->
+         extended.client2.ack_received)
+
+-- Server only sends reply when it has received a request
+SPEC AG ((extended.server.server_ack_state = sending &
+          AX extended.server.server_ack_state = sent) ->
+         extended.server.request_received)
+
+-- Server only receives reply_ack when the channel is non-empty
+SPEC AG ((extended.server.server_reply_ack_state = receiving &
+          AX extended.server.server_reply_ack_state = received) ->
+         !extended.reply_ack_queue.queue_empty)
+
+-- Server never accepts a new request while reply_ack is still pending
+SPEC AG ((extended.server.server_request_state = receiving & 
+          AX extended.server.server_request_state = received) -> 
+         extended.server.reply_ack_received)
+
+-- If server cache is full, reply_ack must not have been received yet
+SPEC AG (extended.server.memory_cache = full -> !extended.server.reply_ack_received)
+
+-- pending_ack prevents server from consuming a new request
+SPEC AG (extended.server.pending_ack ->
+         !(extended.server.server_request_state = receiving &
+           AX extended.server.server_request_state = received))
+
+-- If server's cache is full, it must be because it sent an ack and hasn't received reply_ack yet
+SPEC AG (extended.server.memory_cache = full -> (!extended.server.reply_ack_received))
+
+-- Correct routing of ACKs to clients
+-- SPEC AG ((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) -> extended.server.request_source = clt0)
+
+-- SPEC AG ((extended.client2.client_ack_state = receiving & AX (extended.client2.client_ack_state = received)) -> extended.server.request_source = clt1)
+
+-- ==========================================================
+-- LIVENESS PROPERTIES
+-- ==========================================================
+
+-- System never deadlocks - queues always eventually reach a non-full, non-empty state
+SPEC AG (extended.request_queue.queue_empty -> AF !extended.request_queue.queue_empty)
+SPEC AG (extended.ack_queue.queue_empty -> AF !extended.ack_queue.queue_empty)
+SPEC AG (extended.reply_ack_queue.queue_empty -> AF !extended.reply_ack_queue.queue_empty)
+
+-- If servers want to receive/send, they will eventually receive/send (no starvation)
+SPEC AG (extended.server.server_request_state = receiving -> AF extended.server.server_request_state = received)
+SPEC AG (extended.server.server_ack_state = sending -> AF extended.server.server_ack_state = sent)
+
+-- Client1 makes progress
+SPEC AG (extended.client1.client_request_state = sending -> AF extended.client1.client_request_state = sent)
+SPEC AG (extended.client1.client_ack_state = receiving -> AF extended.client1.client_ack_state = received)
+SPEC AG (extended.client1.client_reply_ack_state = sending -> AF extended.client1.client_reply_ack_state = sent)
+
+-- Client2 makes progress
+SPEC AG (extended.client2.client_request_state = sending -> AF extended.client2.client_request_state = sent)SPEC AG (extended.server.server_reply_ack_state = receiving -> AF extended.server.server_reply_ack_state = received)
+
+-- Server eventually serves both clients (no starvation)
+SPEC AG (AF (extended.server.request_source = clt0))
+SPEC AG (AF (extended.server.request_source = clt1))
+
+-- Memory cache is eventually freed
+SPEC AG (extended.server.memory_cache = full -> AF extended.server.memory_cache = free)
+
+
+-- The Server infinitely often reaches free cache state
+SPEC AG (AF extended.server.memory_cache = free)
+
+-- ACK OWNERSHIP: a client can only consume an ack that belongs to it
+-- client1 (id=0) only consumes when request_source = clt0
+SPEC AG ((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) ->
+    extended.server.request_source = clt0)
+-- client2 (id=1) only consumes when request_source = clt1
+SPEC AG ((extended.client2.client_ack_state = receiving & AX extended.client2.client_ack_state = received) ->
+    extended.server.request_source = clt1)
+
+-- ==========================================================
+-- FUNCTIONAL CORRECTNESS
+-- ==========================================================
+
+-- ACK ROUTING CORRECTNESS: the ack goes to the client who sent the request
+-- If request_source = clt0 when ack is dispatched, only client1 ever receives it
+SPEC AG ((extended.server.server_ack_state = sent & extended.server.request_source = clt0) ->
+    AF extended.client1.client_ack_state = received)
+SPEC AG ((extended.server.server_ack_state = sent & extended.server.request_source = clt1) ->
+    AF extended.client2.client_ack_state = received)
+
+-- Every produced request is eventually consumed by the server
+SPEC AG (extended.client1.client_request_state = sent -> 
+         AF extended.server.server_request_state = received)
+
+SPEC AG (extended.client2.client_request_state = sent -> 
+         AF extended.server.server_request_state = received)
+
+-- Every reply from server is eventually consumed by one client
+SPEC AG (extended.server.server_ack_state = sent -> 
+         AF (extended.client1.client_ack_state = received | extended.client2.client_ack_state = received))
+
+-- Every received reply causes a reply_ack to be sent
+SPEC AG (extended.client1.client_ack_state = received -> AF extended.client1.client_reply_ack_state = sent)
+SPEC AG (extended.client2.client_ack_state = received -> AF extended.client2.client_reply_ack_state = sent)
+
+-- Every reply_ack is eventually received by server
+SPEC AG (extended.client1.client_reply_ack_state = sent -> 
+         AF extended.server.server_reply_ack_state = received)
+
+SPEC AG (extended.client2.client_reply_ack_state = sent -> 
+         AF extended.server.server_reply_ack_state = received)
+
+-- Server cache is freed after reply_ack is received
+SPEC AG (extended.server.server_reply_ack_state = received -> AF extended.server.memory_cache = free)
+
+-- Full round-trip guarantee
+SPEC AG (extended.client1.client_request_state = sent -> 
+         AF extended.server.memory_cache = free)
+
+SPEC AG (extended.client2.client_request_state = sent -> 
+         AF extended.server.memory_cache = free)
+
+-- Clients cannot send two requests in a row without completing cycle
+SPEC AG (extended.client1.client_request_state = sent -> !extended.client1.reply_ack_sent)
+
+
+-- A non-empty reply_ack queue always results in one server receiving it
+SPEC AG (!extended.reply_ack_queue.queue_empty -> AF (extended.server.server_reply_ack_state = received))
+
+-- If the server enters 'received'/'sent' state, the queue head/tail must eventually advance
+SPEC AG ((extended.server.server_request_state = received) -> 
+         AF (extended.server.request_toggle = extended.request_queue.last_consumer_toggle[0]))
+SPEC AG ((extended.server.server_ack_state = sent) -> 
+         AF (extended.server.ack_toggle = extended.ack_queue.last_producer_toggle[0]))
+SPEC AG ((extended.server.server_reply_ack_state = received) -> 
+         AF (extended.server.reply_ack_toggle = extended.reply_ack_queue.last_consumer_toggle[0]))
+
+-- If the client enters 'sent'/'received' state, the queue tail/head must eventually advance
+SPEC AG ((extended.client1.client_request_state = sent) -> 
+         AF (extended.client1.request_toggle = extended.request_queue.last_producer_toggle[0]))
+SPEC AG ((extended.client1.client_ack_state = received) -> 
+         AF (extended.client1.ack_toggle = extended.ack_queue.last_consumer_toggle[0]))
+SPEC AG ((extended.client1.client_reply_ack_state = sent) -> 
+         AF (extended.client1.reply_ack_toggle = extended.reply_ack_queue.last_producer_toggle[0]))
+
+-- Client cannot send two requests without receiving an ack in between
+SPEC AG (extended.client1.client_request_state = sent -> AF extended.client1.ack_received)
+
+
+-- Queues never hold more than one element (single-slot protocol)
+SPEC AG ((extended.request_queue.tail + 2) mod extended.Q_SIZE != extended.request_queue.head)
+SPEC AG ((extended.ack_queue.tail + 2) mod extended.Q_SIZE != extended.ack_queue.head)
+SPEC AG ((extended.reply_ack_queue.tail + 2) mod extended.Q_SIZE != extended.reply_ack_queue.head)
+
+-- Server cannot send an ack unless it has received a request
+SPEC AG ((extended.server.server_ack_state = sending & 
+    AX extended.server.server_ack_state = sent) -> extended.server.request_received)
+
+-- Client cannot receive an ack unless server sent one
+SPEC AG ((extended.client1.client_ack_state = receiving &
+          AX extended.client1.client_ack_state = received) -> !extended.ack_queue.queue_empty)
+
+-- Every received request eventually causes an ack to be sent
+SPEC AG (extended.server.server_request_state = received -> AF extended.server.server_ack_state = sent)
+
+-- Every sent request eventually results in the client receiving an ack
+SPEC AG (extended.client1.client_request_state = sent -> AF extended.client1.client_ack_state = received)
+
+-- Any pending ack implies a request was received
+SPEC AG (!extended.ack_queue.queue_empty -> AF (extended.client1.client_ack_state = received | extended.client2.client_ack_state = received))
+
+
+-- No ack is lost
+SPEC AG (extended.server.server_ack_state = sent -> 
+         AF (extended.client1.client_ack_state = received | extended.client2.client_ack_state = received))
+
+-- THe Server sends an ack for each client request
+SPEC AG ((extended.client1.client_request_state = sent | extended.client2.client_request_state = sent) -> 
+         AF (extended.server.server_ack_state = sent))
+
+-- The server whose cache is full must be the one to receive the next reply_ack
+SPEC AG (extended.server.memory_cache = full ->
+         AF extended.server.server_reply_ack_state = received)
+
+-- Request → ACK → reply_ack chain holds
+SPEC AG (extended.client1.client_request_state = sent -> AF extended.client1.client_ack_state = received)
+SPEC AG (extended.client2.client_request_state = sent -> AF extended.client2.client_ack_state = received)
+
+-- Client cannot consume an ack it was not waiting for (request_sent is the guard)
+SPEC AG ((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) ->
+    extended.client1.request_sent)
+SPEC AG ((extended.client2.client_ack_state = receiving & AX extended.client2.client_ack_state = received) ->
+    extended.client2.request_sent)
+
+-- request_source = clt0 only when client1 actually has a pending request
+SPEC AG (extended.client1.request_sent -> AF extended.server.request_source = clt0)
+-- request_source = clt1 only when client2 actually has a pending request
+SPEC AG (extended.client2.request_sent -> AF extended.server.request_source = clt1)
+
+-- When server consumes a request, producer_id at head must match request_source
+SPEC AG (
+    (extended.server.server_request_state = receiving &
+     AX extended.server.server_request_state = received) ->
+    extended.server.request_source = extended.request_queue.producer_id[extended.request_queue.head]
+)
+
+-- ==========================================================
+-- TOGGLE SYNCHRONIZATION
+-- ==========================================================
+
+-- Client ack toggle changes when consuming from the shared ack queue
+SPEC AG ((extended.client1.client_ack_state = receiving & !extended.ack_queue.queue_empty &
+          extended.server.request_source = clt0) ->
+         AF extended.client1.ack_toggle != extended.ack_queue.last_consumer_toggle[0])
+SPEC AG ((extended.client2.client_ack_state = receiving & !extended.ack_queue.queue_empty &
+          extended.server.request_source = clt1) ->
+         AF extended.client2.ack_toggle != extended.ack_queue.last_consumer_toggle[1])
+
+-- Client request/ack/reply_ack toggle changes when producing/consuming
+SPEC AG ((extended.client1.client_request_state = sending & !extended.request_queue.queue_full & extended.client1.reply_ack_sent) ->
+         AF extended.client1.request_toggle != extended.request_queue.last_producer_toggle[0])
+SPEC AG ((extended.client1.client_ack_state = receiving & !extended.ack_queue.queue_empty) ->
+         AF extended.client1.ack_toggle != extended.ack_queue.last_consumer_toggle[0])
+
+SPEC AG ((extended.client1.client_reply_ack_state = sending & !extended.reply_ack_queue.queue_full & extended.client1.ack_received) ->
+         AF extended.client1.reply_ack_toggle != extended.reply_ack_queue.last_producer_toggle[0])
+
+SPEC AG ((extended.server.server_ack_state = sending & !extended.ack_queue.queue_full & extended.server.request_received) ->
+         AF extended.server.ack_toggle != extended.ack_queue.last_producer_toggle[0])
+
+-- Request Queue's last_producer_toggle tracks client's request_toggle after production
+SPEC AG ((extended.client1.client_request_state = sent & 
+          extended.client1.request_toggle != extended.request_queue.last_producer_toggle[0]) ->
+         AF extended.request_queue.last_producer_toggle[0] = extended.client1.request_toggle)
+
+-- Request Queue's last_consumer_toggle tracks servers' request_toggle after consumption
+SPEC AG ((extended.server.server_request_state = received & 
+          extended.server.request_toggle != extended.request_queue.last_consumer_toggle[0]) ->
+         AF extended.request_queue.last_consumer_toggle[0] = extended.server.request_toggle)
+
+SPEC AG ((extended.server.server_ack_state = sent &
+          extended.server.ack_toggle != extended.ack_queue.last_producer_toggle[0]) ->
+         AF extended.ack_queue.last_producer_toggle[0] = extended.server.ack_toggle)
+
+-- Ack Queue's last_consumer_toggle tracks client's ack_toggle after consumption
+SPEC AG ((extended.client1.client_ack_state = received & 
+          extended.client1.ack_toggle != extended.ack_queue.last_consumer_toggle[0]) ->
+         AF extended.ack_queue.last_consumer_toggle[0] = extended.client1.ack_toggle)
+
+-- Ack Queue's last_producer_toggle tracks servers' ack_toggle after production
+SPEC AG ((extended.server.server_ack_state = sent & 
+          extended.server.ack_toggle != extended.ack_queue.last_producer_toggle[0]) ->
+         AF extended.ack_queue.last_producer_toggle[0] = extended.server.ack_toggle)
+
+-- Reply Ack Queue's last_producer_toggle tracks client's reply_ack_toggle after production
+SPEC AG ((extended.client1.client_reply_ack_state = sent & 
+          extended.client1.reply_ack_toggle != extended.reply_ack_queue.last_producer_toggle[0]) ->
+         AF extended.reply_ack_queue.last_producer_toggle[0] = extended.client1.reply_ack_toggle)
+
+-- Reply Ack Queue's last_consumer_toggle tracks servers' reply_ack_toggle after consumption
+SPEC AG ((extended.server.server_reply_ack_state = received & 
+          extended.server.reply_ack_toggle != extended.reply_ack_queue.last_consumer_toggle[0]) ->
+         AF extended.reply_ack_queue.last_consumer_toggle[0] = extended.server.reply_ack_toggle)
+
+
+-- ==========================================================
+-- FAIRNESS VERIFICATION
+-- ==========================================================
+-- Client and servers make progress infinitely often
+SPEC AG (AF extended.client1.client_request_state   = sending)
+SPEC AG (AF extended.client1.client_ack_state       = receiving)
+SPEC AG (AF extended.client1.client_reply_ack_state = sending)
+
+SPEC AG (AF extended.server.server_request_state   = receiving)
+SPEC AG (AF extended.server.server_ack_state       = sending)
+SPEC AG (AF extended.server.server_reply_ack_state = receiving)
+
+-- =========================================================
+-- REQUEST_SOURCE INVARIANTS
+-- =========================================================
+
+-- (checked implicitly by init, but useful as a reachability anchor)
+SPEC EF (extended.server.request_source = none)
+SPEC EF (extended.server.request_source = clt0)
+SPEC EF (extended.server.request_source = clt1)
+
+-- request_source = clt0 only when client1 actually has a pending request
+SPEC AG (extended.client1.request_sent -> AF extended.server.request_source = clt0)
+-- request_source = clt1 only when client2 actually has a pending request
+SPEC AG (extended.client2.request_sent -> AF extended.server.request_source = clt1)
+
+-- request_source resets to none only when an ack has been dispatched
+-- (i.e. server_ack_state just transitioned to sent)
+SPEC AG ((extended.server.request_source = none & AX extended.server.request_source = none) ->
+         extended.server.server_ack_state = sending)
+
+-- ==========================================================
+-- REACHABILITY
+-- ==========================================================
+
+-- Queues never reach full (single-slot behavior)
+SPEC AG !extended.request_queue.queue_full
+SPEC AG !extended.ack_queue.queue_full
+SPEC AG !extended.reply_ack_queue.queue_full
+
+-- Queues can be empty
+SPEC EF extended.request_queue.queue_empty
+SPEC EF extended.ack_queue.queue_empty
+SPEC EF extended.reply_ack_queue.queue_empty
+
+-- All queues can be non-empty (and non-full)
+SPEC EF (!extended.request_queue.queue_empty & !extended.request_queue.queue_full)
+SPEC EF (!extended.ack_queue.queue_empty & !extended.ack_queue.queue_full)
+SPEC EF (!extended.reply_ack_queue.queue_empty & !extended.reply_ack_queue.queue_full)
+
+-- Server can reach both cache states
+SPEC EF (extended.server.memory_cache = full)
+SPEC EF (extended.server.memory_cache = free)
+
+-- Server can send ack and receive reply_ack
+SPEC EF (extended.server.server_ack_state = sent)
+SPEC EF (extended.server.server_reply_ack_state = received)
+
+-- request_sent can be TRUE for both clients at some point in their lifetime
+SPEC EF extended.client1.request_sent
+SPEC EF extended.client2.request_sent
+
+-- The server can identify requests from both clients
+SPEC EF (extended.server.request_source = clt0)
+SPEC EF (extended.server.request_source = clt1)
 
 -- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/RRA_Protocol/RRA_ProtocolExtendedClient.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

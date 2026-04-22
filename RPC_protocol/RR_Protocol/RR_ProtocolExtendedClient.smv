@@ -325,7 +325,6 @@ SPEC AG ((extended.client2.client_ack_state = receiving & AX extended.client2.cl
 SPEC AG !((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) &
           (extended.client2.client_ack_state = receiving & AX extended.client2.client_ack_state = received))
 
--- request_source is set consistently with whose toggle changed
 -- Client cannot consume an ack it was not waiting for (request_sent is the guard)
 SPEC AG ((extended.client1.client_ack_state = receiving & AX extended.client1.client_ack_state = received) ->
     extended.client1.request_sent)
@@ -493,7 +492,6 @@ SPEC AG ((extended.client2.client_ack_state = received &
 -- REQUEST_SOURCE INVARIANTS
 -- =========================================================
 
--- request_source is none at initialization
 -- (checked implicitly by init, but useful as a reachability anchor)
 SPEC EF (extended.server.request_source = none)
 SPEC EF (extended.server.request_source = clt0)
