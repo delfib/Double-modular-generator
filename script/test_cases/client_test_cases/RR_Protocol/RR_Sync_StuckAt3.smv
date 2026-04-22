@@ -172,25 +172,25 @@ VAR
 -- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
+    producer_id : array 0..3 of {none, clt0, clt1, clt2};
     head : 0..3;
     tail : 0..3;
     last_producer_toggle : array 0..2 of boolean;  -- last toggle value we saw
     last_consumer_toggle : array 0..2 of boolean;
-    producer_id : array 0..3 of {none, clt0, clt1, clt2};
 
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
+    init(producer_id[0]) := none;
+    init(producer_id[1]) := none;
+    init(producer_id[2]) := none;
+    init(producer_id[3]) := none;
         init(last_producer_toggle[0]) := FALSE;
     init(last_producer_toggle[1]) := FALSE;
     init(last_producer_toggle[2]) := FALSE;
         init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
     init(last_consumer_toggle[2]) := FALSE;
-    init(producer_id[0]) := none;
-    init(producer_id[1]) := none;
-    init(producer_id[2]) := none;
-    init(producer_id[3]) := none;
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
