@@ -258,7 +258,7 @@ FAIRNESS
 -- =========================================================
 -- Client Extended
 -- =========================================================
-MODULE ClientExtended(request_queue, ack_queue, ack_owner, client_id)
+MODULE ClientExtended(request_queue, ack_queue, client_id, ack_owner)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
     client_request_state : {sending, sent};
