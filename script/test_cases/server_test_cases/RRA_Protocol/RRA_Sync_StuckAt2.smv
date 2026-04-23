@@ -413,7 +413,7 @@ FAIRNESS
 -- =========================================================
 -- Extended Server
 -- =========================================================
-MODULE Server(request_queue, ack_queue, reply_ack_queue, reply_ack_owner, server_id)
+MODULE ServerExtended(request_queue, ack_queue, reply_ack_queue, server_id, reply_ack_owner)
 VAR
     fault_mode : {none, stuck_receiving, stuck_received};
     server_request_state    : {receiving, received};
@@ -430,6 +430,7 @@ VAR
 
 ASSIGN
     init(fault_mode) := none;
+
     init(server_request_state)   := receiving;
     init(server_ack_state)       := sending;
     init(server_reply_ack_state) := receiving;
@@ -445,10 +446,11 @@ ASSIGN
             fault_mode = none : {none, stuck_receiving, stuck_received};
             TRUE              : fault_mode;
         esac;
-    next(server_request_state) := 
-        case
+
+    next(server_request_state) := case
         fault_mode = stuck_receiving : receiving;
         fault_mode = stuck_received : received;
+
         server_request_state = receiving & request_queue.queue_empty : receiving;
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed : received;
         server_request_state = received & !request_queue.queue_empty & request_toggle = request_queue.last_consumer_toggle[server_id] : receiving;
@@ -467,7 +469,7 @@ ASSIGN
     -- Server waits for the reply_ack from the client, then frees the cache.
     next(server_reply_ack_state) := case
         server_reply_ack_state = receiving & reply_ack_queue.queue_empty : receiving;
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : received;   -- only if this reply_ack belongs to us
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : received;
         server_reply_ack_state = received & !reply_ack_queue.queue_empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle[server_id] : receiving;
         server_reply_ack_state = received & reply_ack_queue.queue_empty : received;
         TRUE : server_reply_ack_state;
@@ -475,20 +477,23 @@ ASSIGN
 
     next(request_toggle) := case
         fault_mode = none &
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed: !request_toggle;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed : !request_toggle;
         TRUE : request_toggle;
+    
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
         server_ack_state = sending & !ack_queue.queue_full & request_received : !ack_toggle;
         TRUE : ack_toggle;
+    
     esac;
 
     next(reply_ack_toggle) := case
         fault_mode = none &
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
+    
     esac;
 
     next(request_received) := case
@@ -515,7 +520,6 @@ DEFINE
         server_id = 0 : srv0;
         server_id = 1 : srv1;
     esac;
-
 FAIRNESS
     running
 
@@ -537,8 +541,8 @@ VAR
     reply_ack_prod_toggles : array 0..1 of boolean;
     reply_ack_cons_toggles : array 0..1 of boolean;
 
-    server1 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 0);
-    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 1);
+    server1 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 0, client.ack_source);
+    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 1, client.ack_source);
 
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
