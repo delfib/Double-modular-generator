@@ -167,8 +167,9 @@ VAR
     ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
 
 
+
 -- =========================================================
--- Extended Queue 
+-- Queue Extended
 -- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
@@ -254,10 +255,98 @@ DEFINE
 FAIRNESS
     running
 
+-- =========================================================
+-- Server Extended
+-- =========================================================
+MODULE ServerExtended(request_queue, ack_queue)
+VAR
+    server_request_state : {receiving, received};
+    server_ack_state : {sending, sent};
+    request_toggle : boolean;  
+    ack_toggle : boolean;
+    request_received : boolean;
+    request_source : {none, clt0, clt1};
+    pending_ack : boolean;
+    ack_consume_marker : boolean;
+
+ASSIGN
+    init(server_request_state) := receiving;
+    init(server_ack_state) := sending;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(request_received) := FALSE;
+    init(request_source) := none;
+    init(pending_ack) := FALSE;
+    init(ack_consume_marker) := FALSE;
+
+    next(server_request_state) :=
+        case
+            server_request_state = receiving & request_queue.empty : receiving;
+            server_request_state = receiving & !request_queue.empty & !pending_ack : received;
+            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0]: receiving;
+            server_request_state = received & request_queue.empty : received;
+            TRUE : server_request_state;
+        esac;
+
+     next(server_ack_state) :=
+        case
+            server_ack_state = sending & ack_queue.full : sending;
+            server_ack_state = sending & !ack_queue.full & request_received : sent;
+            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
+            server_ack_state = sent & ack_queue.full : sent;
+            TRUE : server_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        server_request_state = receiving & !request_queue.empty & !pending_ack : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+    next(ack_toggle) := case
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;                   
+        TRUE : ack_toggle;                                                    
+    esac;
+
+    next(request_received) := case
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;        -- false because a new ack has just been sent
+        server_request_state = receiving & !request_queue.empty & !pending_ack : TRUE;         -- true because a new request has been received
+        TRUE : request_received;     
+    esac;
+
+
+    next(request_source) := case
+        server_request_state = receiving & !request_queue.empty & !pending_ack :
+            request_queue.producer_id[request_queue.head];
+        TRUE : request_source;
+    esac;
+    
+
+    next(pending_ack) := case
+        server_ack_state = sending & !ack_queue.full & request_received : TRUE;
+        pending_ack & (
+            (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
+            (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker)
+        ) : FALSE;
+        TRUE : pending_ack;
+    esac;
+    
+
+    next(ack_consume_marker) := case
+            server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
+        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
+        TRUE : ack_consume_marker;
+    esac;
+    
+FAIRNESS
+    running
+
+
 
 -- =========================================================
--- Extended Client
+-- Client Extended
 -- =========================================================
+
+
 MODULE ClientExtended(request_queue, ack_queue, client_id, ack_owner)
 VAR
     fault_mode : {none, byzantine_client_request_state};
@@ -324,6 +413,7 @@ ASSIGN
         TRUE : ack_received;           
     esac;
 
+
     next(request_sent) := case
         client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;
         client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;
@@ -331,97 +421,19 @@ ASSIGN
     esac;
     
 DEFINE
-    self_id := case
-        client_id = 0 : clt0;
-        client_id = 1 : clt1;
-    esac;
+    self_id :=
+        case
+            client_id = 0 : clt0;
+            client_id = 1 : clt1;
+        esac;
 
 FAIRNESS
     running
 
--- =========================================================
--- Extended Server
--- =========================================================
-MODULE ServerExtended(request_queue, ack_queue)
-VAR
-    server_request_state : {receiving, received};
-    server_ack_state : {sending, sent};
-    request_toggle : boolean;  
-    ack_toggle : boolean;
-    request_received : boolean;
-    request_source : {none, clt0, clt1};
-    pending_ack : boolean;
-    ack_consume_marker : boolean;
 
-ASSIGN
-    init(server_request_state) := receiving;
-    init(server_ack_state) := sending;
-    init(request_toggle) := FALSE;
-    init(ack_toggle) := FALSE;
-    init(request_received) := FALSE;
-    init(request_source) := none;
-    init(pending_ack) := FALSE;
-    init(ack_consume_marker) := FALSE;
-
-    next(server_request_state) :=
-        case
-            server_request_state = receiving & request_queue.empty : receiving;
-            server_request_state = receiving & !request_queue.empty & !pending_ack : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0]: receiving;
-            server_request_state = received & request_queue.empty : received;
-            TRUE : server_request_state;
-        esac;
-
-     next(server_ack_state) :=
-        case
-            server_ack_state = sending & ack_queue.full : sending;
-            server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
-            server_ack_state = sent & ack_queue.full : sent;
-            TRUE : server_ack_state;
-        esac;
-
-    next(request_toggle) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack : !request_toggle;                   
-        TRUE : request_toggle;                                                    
-    esac;
-
-    next(ack_toggle) := case
-        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;                   
-        TRUE : ack_toggle;                                                    
-    esac;
-
-    next(request_received) := case
-        server_ack_state = sending & !ack_queue.full & request_received : FALSE;        -- false because a new ack has just been sent
-        server_request_state = receiving & !request_queue.empty & !pending_ack : TRUE;         -- true because a new request has been received
-        TRUE : request_received;     
-    esac;
-
-    next(request_source) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack : request_queue.producer_id[request_queue.head];
-        TRUE : request_source;
-    esac;
-
-    next(pending_ack) := case
-        server_ack_state = sending & !ack_queue.full & request_received : TRUE;     -- We must wait after sending a new ack
-        pending_ack & (
-            (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
-            (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker)
-        ) : FALSE;     -- When the correct client consumes it, we stop waiting
-        TRUE : pending_ack;
-    esac;
-
-    next(ack_consume_marker) := case
-        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
-        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
-        TRUE : ack_consume_marker;
-    esac;
-
-FAIRNESS
-    running
 
 -- =========================================================
--- Extended module
+-- Server module
 -- =========================================================
 
 
@@ -430,11 +442,15 @@ DEFINE
     Q_SIZE := 4;
 VAR
     request_prod_toggles : array 0..1 of boolean;
+
     request_cons_toggles : array 0..1 of boolean;
+
     ack_prod_toggles     : array 0..1 of boolean;
+
     ack_cons_toggles     : array 0..1 of boolean;
 
     client1 : process ClientExtended(request_queue, ack_queue, server.request_source, 0);
+
     client2 : process ClientExtended(request_queue, ack_queue, server.request_source, 1);
     server : process ServerExtended(request_queue, ack_queue);
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
@@ -461,6 +477,7 @@ VAR
 
 -- Whenever nominal server consumes, eventually an extended server consumes
 SPEC AG (nominal.client.client_request_state = sent -> AF (extended.client1.client_request_state = sent | extended.client2.client_request_state = sent))
+
 
 -- =========================================================
 --  Main Module
