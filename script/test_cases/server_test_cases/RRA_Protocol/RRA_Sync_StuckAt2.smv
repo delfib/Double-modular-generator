@@ -286,28 +286,26 @@ DEFINE
 FAIRNESS
     running
 
-
 -- =========================================================
 -- Client Extended
 -- =========================================================
 MODULE ClientExtended(request_queue, ack_queue, reply_ack_queue)
 VAR
-    client_request_state : {sending, sent};
-    client_ack_state  : {receiving, received};
-    client_reply_ack_state : {sending, sent};          
+    client_request_state    : {sending, sent};
+    client_ack_state        : {receiving, received};
+    client_reply_ack_state  : {sending, sent};          
 
-    request_toggle : boolean;
-    ack_toggle : boolean;
-    reply_ack_toggle : boolean;                  
+    request_toggle          : boolean;
+    ack_toggle              : boolean;
+    reply_ack_toggle        : boolean;                  
 
-    ack_received : boolean;   
-    reply_ack_sent : boolean; 
-
+    ack_received            : boolean;
     ack_source : {none, srv0, srv1};
-    pending_reply_ack : boolean;    
+    pending_reply_ack : boolean;
     reply_ack_consume_marker : boolean;
-    client_ack_srv0_seen : boolean; 
+    client_ack_srv0_seen : boolean;
     client_ack_srv1_seen : boolean;     
+    reply_ack_sent          : boolean;     
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -317,12 +315,12 @@ ASSIGN
     init(ack_toggle)             := FALSE;
     init(reply_ack_toggle)       := FALSE;
     init(ack_received)           := FALSE;
+    init(ack_source) := none;
+    init(pending_reply_ack) := FALSE;
+    init(reply_ack_consume_marker) := FALSE;
+    init(client_ack_srv0_seen) := FALSE;
+    init(client_ack_srv1_seen) := FALSE;
     init(reply_ack_sent)         := TRUE;
-    init(ack_source)             := none;
-    init(pending_reply_ack)      := FALSE;
-    init(reply_ack_consume_marker)  := FALSE;
-    init(client_ack_srv0_seen)      := FALSE;
-    init(client_ack_srv1_seen)      := FALSE;
 
     next(client_request_state) := case
         client_request_state = sending & request_queue.queue_full : sending;
@@ -342,7 +340,7 @@ ASSIGN
 
     next(client_reply_ack_state) := case
         client_reply_ack_state = sending & reply_ack_queue.queue_full : sending;
-        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;   
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;
         client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle[0] : sending;
         client_reply_ack_state = sent & reply_ack_queue.queue_full : sent;
         TRUE : client_reply_ack_state;
@@ -365,48 +363,55 @@ ASSIGN
 
     next(ack_received) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : FALSE;   -- new reply to server's ack just sent
-        client_ack_state = receiving & !ack_queue.queue_empty                     : TRUE;    -- reply received
+        client_ack_state = receiving & !ack_queue.queue_empty : TRUE;    -- reply received
         TRUE : ack_received;
     esac;
 
-    next(reply_ack_sent) :=  case
+    next(reply_ack_sent) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;  -- reply_ack just sent
         client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack : FALSE;   -- new request just sent
         TRUE : reply_ack_sent;
     esac;
 
+
     next(ack_source) := case
-        client_ack_state = receiving & ack_queue.last_producer_toggle[0] != client_ack_srv0_seen : srv0; 
-        client_ack_state = receiving & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : srv1; 
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack : none;  -- reset after a new request is sent
+            client_ack_state = receiving & ack_queue.last_producer_toggle[0] != client_ack_srv0_seen : srv0;
+        client_ack_state = receiving & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : srv1;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack : none;
         TRUE : ack_source;
     esac;
-
+    
     next(pending_reply_ack) := case
-        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;   -- We must wait after sending a reply_ack
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;
         pending_reply_ack & (
             (ack_source = srv0 & reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker) |
             (ack_source = srv1 & reply_ack_queue.last_consumer_toggle[1] != reply_ack_consume_marker)
-        ) : FALSE;  -- When the correct server consumes it, we stop waiting
+        ) : FALSE;
         TRUE : pending_reply_ack;
     esac;
-
+    
     next(reply_ack_consume_marker) := case
-        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv0 : reply_ack_queue.last_consumer_toggle[0];
+            client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv0 : reply_ack_queue.last_consumer_toggle[0];
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv1 : reply_ack_queue.last_consumer_toggle[1];
         TRUE : reply_ack_consume_marker;
     esac;
-
+    
     next(client_ack_srv0_seen) := case
-        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[0] != client_ack_srv0_seen : ack_queue.last_producer_toggle[0];
+        client_ack_state = receiving & !ack_queue.queue_empty &
+        ack_queue.last_producer_toggle[0] != client_ack_srv0_seen :
+            ack_queue.last_producer_toggle[0];
         TRUE : client_ack_srv0_seen;
     esac;
     
+
+
     next(client_ack_srv1_seen) := case
-        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : ack_queue.last_producer_toggle[1];
+        client_ack_state = receiving & !ack_queue.queue_empty &
+        ack_queue.last_producer_toggle[1] != client_ack_srv1_seen :
+            ack_queue.last_producer_toggle[1];
         TRUE : client_ack_srv1_seen;
     esac;
-
+    
 FAIRNESS
     running
 
