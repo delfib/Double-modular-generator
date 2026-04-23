@@ -213,6 +213,7 @@ ASSIGN
 FAIRNESS
     running
 
+
 -- =========================================================
 -- Nominal wrapper
 -- =========================================================
@@ -261,8 +262,7 @@ ASSIGN
             TRUE              : fault_mode;
         esac;
 
-    next(client_request_state) := 
-        case
+    next(client_request_state) := case
         fault_mode = stuck_sending : sending;
         fault_mode = stuck_sent : sent;
 
@@ -273,14 +273,13 @@ ASSIGN
         TRUE : client_request_state;
     esac;
 
-    next(client_ack_state) := 
-        case
-            client_ack_state = receiving & ack_queue.queue_empty : receiving;
-            client_ack_state = receiving & !ack_queue.queue_empty : received;
-            client_ack_state = received & !ack_queue.queue_empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
-            client_ack_state = received & ack_queue.queue_empty : received;
-            TRUE : client_ack_state;
-        esac;
+    next(client_ack_state) := case
+        client_ack_state = receiving & ack_queue.queue_empty : receiving;
+        client_ack_state = receiving & !ack_queue.queue_empty : received;
+        client_ack_state = received & !ack_queue.queue_empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
+        client_ack_state = received & ack_queue.queue_empty : received;
+        TRUE : client_ack_state;
+    esac;
 
     next(client_reply_ack_state) := case
         client_reply_ack_state = sending & reply_ack_queue.queue_full : sending;
@@ -294,18 +293,21 @@ ASSIGN
         fault_mode = none &
         client_request_state = sending & !request_queue.queue_full & reply_ack_sent : !request_toggle;
         TRUE : request_toggle;
+    
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
         client_ack_state = receiving & !ack_queue.queue_empty : !ack_toggle;
         TRUE : ack_toggle;
+    
     esac;
 
     next(reply_ack_toggle) := case
         fault_mode = none &
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
+    
     esac;
 
     next(ack_received) := case
@@ -327,6 +329,8 @@ FAIRNESS
 -- =========================================================
 -- Extended module
 -- =========================================================
+
+
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
@@ -336,8 +340,6 @@ VAR
     request_queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
     ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
     reply_ack_queue : process Queue(Q_SIZE, client.reply_ack_toggle, server.reply_ack_toggle);
-
-
 
 
 -- =========================================================
