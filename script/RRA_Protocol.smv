@@ -217,7 +217,7 @@ FAIRNESS
 -- =========================================================
 -- Nominal wrapper
 -- =========================================================
-MODULE NominalRRA()
+MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
@@ -233,4 +233,4 @@ VAR
 -- =========================================================
 MODULE main
 VAR
-    nominal : NominalRRA();
+    nominal : Nominal();
