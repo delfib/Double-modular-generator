@@ -552,13 +552,35 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     channels = ["request", "ack", "reply_ack"]
 
     # Find target instance
-    instance_pattern = rf'(\s*)(\w+)\s*:\s*process\s+{re.escape(target_module)}\(([^)]*)\);'
+    instance_pattern = rf'(\s*)(\w+\s*:\s*process\s+{re.escape(target_module)}\([^)]*\);)'
     match = re.search(instance_pattern, text)
     if not match:
         raise ValueError(f"Could not find instance of {target_module}")
 
     indent = match.group(1)
-    params = match.group(3)
+    full_line = match.group(2)
+
+    # Extract params safely
+    params_match = re.search(r'\(([^)]*)\)', full_line)
+    params = params_match.group(1)
+
+    #Replace non-target module with Extended version
+    non_target = 'client' if is_server_target else 'server'
+    non_target_ext = f'{non_target.capitalize()}Extended'
+
+    non_target_pattern = rf'(\s*\w+\s*:\s*process\s+){non_target.capitalize()}\(([^)]*)\);'
+
+    non_target_match = re.search(non_target_pattern, text, re.IGNORECASE)
+
+    if non_target_match:
+        new_line = (
+            non_target_match.group(1)
+            + non_target_ext
+            + '('
+            + non_target_match.group(2)
+            + ');'
+        )
+        text = text[:non_target_match.start()] + new_line + text[non_target_match.end():]
 
     # Build instances
     instance_lines = []
@@ -659,7 +681,7 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
 
     # Inject instances
     new_instance_block = "\n".join(bridge_lines + instance_lines)
-    text = text[:match.start()] + new_instance_block + text[match.end():]
+    text = text.replace(full_line, new_instance_block)
 
     # ASSIGN block
     if 'ASSIGN' not in text:
