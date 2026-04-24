@@ -55,8 +55,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
+    ack_received            : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -203,7 +203,6 @@ ASSIGN
         TRUE : reply_ack_received;
     esac;
 
-    -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : free;  -- reply_ack received, free cache
@@ -227,6 +226,7 @@ VAR
     ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
     reply_ack_queue : process Queue(Q_SIZE, client.reply_ack_toggle, server.reply_ack_toggle);
 
+
 -- =========================================================
 -- Extended Client
 -- =========================================================
@@ -241,8 +241,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
+    ack_received            : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(fault_mode) := none;
@@ -329,8 +329,6 @@ FAIRNESS
 -- =========================================================
 -- Extended module
 -- =========================================================
-
-
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;

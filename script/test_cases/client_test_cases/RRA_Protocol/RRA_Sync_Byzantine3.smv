@@ -55,8 +55,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
+    ack_received            : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -203,7 +203,6 @@ ASSIGN
         TRUE : reply_ack_received;
     esac;
 
-    -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : free;  -- reply_ack received, free cache
@@ -333,6 +332,7 @@ DEFINE
 
 FAIRNESS
     running
+
 
 
 -- =========================================================
@@ -472,8 +472,8 @@ VAR
     ack_received            : boolean;
     request_sent : boolean;
     pending_reply_ack : boolean;
-    reply_ack_consume_marker : boolean;    
-    reply_ack_sent          : boolean;    
+    reply_ack_consume_marker : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(fault_mode) := none;
@@ -586,7 +586,8 @@ DEFINE
 
 FAIRNESS
     running
-    
+
+
 -- =========================================================
 -- Extended module
 -- =========================================================
@@ -595,41 +596,46 @@ DEFINE
     Q_SIZE := 4;
 VAR
     request_prod_toggles : array 0..2 of boolean;
+
     request_cons_toggles : array 0..2 of boolean;
-    ack_prod_toggles     : array 0..2 of boolean;
-    ack_cons_toggles     : array 0..2 of boolean;
+
+    ack_prod_toggles : array 0..2 of boolean;
+
+    ack_cons_toggles : array 0..2 of boolean;
+
     reply_ack_prod_toggles : array 0..2 of boolean;
+
     reply_ack_cons_toggles : array 0..2 of boolean;
 
-    client1  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 0);
-    client2  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 1);
-    client3  : process ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 2);
-    server : process ServerExtended(request_queue, ack_queue, reply_ack_queue);
+    client1 : process ClientExtended(request_queue, ack_queue, reply_ack_queue, 0, server.request_source);
 
+    client2 : process ClientExtended(request_queue, ack_queue, reply_ack_queue, 1, server.request_source);
+
+    client3 : process ClientExtended(request_queue, ack_queue, reply_ack_queue, 2, server.request_source);
+    server : process ServerExtended(request_queue, ack_queue, reply_ack_queue);
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : process QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
 
 ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
-    request_prod_toggles[1] := client2.request_toggle; 
+    request_prod_toggles[1] := client2.request_toggle;
     request_prod_toggles[2] := client3.request_toggle;
     request_cons_toggles[0] := server.request_toggle;
-    request_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
-    request_cons_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+    request_cons_toggles[1] := FALSE;
+    request_cons_toggles[2] := FALSE;
     ack_prod_toggles[0] := server.ack_toggle;
-    ack_prod_toggles[1] := FALSE;     -- dummy, stays FALSE forever
-    ack_prod_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+    ack_prod_toggles[1] := FALSE;
+    ack_prod_toggles[2] := FALSE;
     ack_cons_toggles[0] := client1.ack_toggle;
-    ack_cons_toggles[1] := client2.ack_toggle; 
+    ack_cons_toggles[1] := client2.ack_toggle;
     ack_cons_toggles[2] := client3.ack_toggle;
-
     reply_ack_prod_toggles[0] := client1.reply_ack_toggle;
     reply_ack_prod_toggles[1] := client2.reply_ack_toggle;
     reply_ack_prod_toggles[2] := client3.reply_ack_toggle;
     reply_ack_cons_toggles[0] := server.reply_ack_toggle;
-    reply_ack_cons_toggles[1] := FALSE;     -- dummy, stays FALSE forever
-    reply_ack_cons_toggles[2] := FALSE;     -- dummy, stays FALSE forever
+    reply_ack_cons_toggles[1] := FALSE;
+    reply_ack_cons_toggles[2] := FALSE;
 
 
 -- =========================================================
@@ -642,6 +648,7 @@ VAR
 
 -- Whenever nominal server consumes, eventually an extended server consumes
 SPEC AG (nominal.client.client_request_state = sent -> AF (extended.client1.client_request_state = sent | extended.client2.client_request_state = sent))
+
 
 -- =========================================================
 --  Main Module

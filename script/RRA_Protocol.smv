@@ -203,7 +203,6 @@ ASSIGN
         TRUE : reply_ack_received;
     esac;
 
-    -- memory_cache: full after reply sent, free after reply_ack received 
     next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : free;  -- reply_ack received, free cache
