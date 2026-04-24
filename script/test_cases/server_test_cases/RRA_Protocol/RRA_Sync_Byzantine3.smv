@@ -55,8 +55,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
+    ack_received            : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -247,7 +247,7 @@ ASSIGN
         init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
     init(last_consumer_toggle[2]) := FALSE;
-   
+
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
         (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
@@ -294,7 +294,7 @@ ASSIGN
 
 DEFINE
     request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1] | last_consumer_toggle[2] != consumer_toggles[2];
-    queue_full  := ((tail + 1) mod Q_SIZE = head);
+    queue_full := ((tail + 1) mod Q_SIZE = head);
     queue_empty := (tail = head);
 
 FAIRNESS
@@ -320,8 +320,8 @@ VAR
     reply_ack_consume_marker : boolean;
     client_ack_srv0_seen : boolean;
     client_ack_srv1_seen : boolean;
-    client_ack_srv2_seen : boolean;     
-    reply_ack_sent          : boolean;     
+    client_ack_srv2_seen : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -444,6 +444,7 @@ ASSIGN
 FAIRNESS
     running
 
+
 -- =========================================================
 -- Extended Server
 -- =========================================================
@@ -557,6 +558,7 @@ DEFINE
 FAIRNESS
     running
 
+
 -- =========================================================
 -- System wrapper
 -- =========================================================
@@ -569,18 +571,19 @@ VAR
 
     request_cons_toggles : array 0..2 of boolean;
 
-    ack_prod_toggles     : array 0..2 of boolean;
+    ack_prod_toggles : array 0..2 of boolean;
 
-    ack_cons_toggles     : array 0..2 of boolean;
+    ack_cons_toggles : array 0..2 of boolean;
+
     reply_ack_prod_toggles : array 0..2 of boolean;
+
     reply_ack_cons_toggles : array 0..2 of boolean;
 
-    server1 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 0);
+    server1 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 0, client.ack_source);
 
-    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 1);
+    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 1, client.ack_source);
 
-    server3 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 2);
-
+    server3 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 2, client.ack_source);
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : process QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
@@ -598,13 +601,13 @@ ASSIGN
     ack_cons_toggles[0] := client.ack_toggle;
     ack_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
     ack_cons_toggles[2] := FALSE;   -- dummy, stays FALSE forever
-
     reply_ack_prod_toggles[0] := client.reply_ack_toggle;
     reply_ack_prod_toggles[1] := FALSE;
     reply_ack_prod_toggles[2] := FALSE;
     reply_ack_cons_toggles[0] := server1.reply_ack_toggle;
     reply_ack_cons_toggles[1] := server2.reply_ack_toggle;
     reply_ack_cons_toggles[2] := server3.reply_ack_toggle;
+
 
 -- =========================================================
 --  Synchronization Module

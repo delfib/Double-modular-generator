@@ -55,8 +55,8 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;                  
 
-    ack_received            : boolean;     -- TRUE once server acknowledgement has been received (guards new request)
-    reply_ack_sent          : boolean;     -- TRUE once reply_ack has been sent 
+    ack_received            : boolean; 
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;

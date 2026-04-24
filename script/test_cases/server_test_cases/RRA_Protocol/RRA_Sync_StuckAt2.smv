@@ -279,8 +279,8 @@ ASSIGN
     esac;
 
 DEFINE
-    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];    -- has a server already consumed this request?
-    queue_full  := ((tail + 1) mod Q_SIZE = head);
+    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];
+    queue_full := ((tail + 1) mod Q_SIZE = head);
     queue_empty := (tail = head);
 
 FAIRNESS
@@ -304,8 +304,8 @@ VAR
     pending_reply_ack : boolean;
     reply_ack_consume_marker : boolean;
     client_ack_srv0_seen : boolean;
-    client_ack_srv1_seen : boolean;     
-    reply_ack_sent          : boolean;     
+    client_ack_srv1_seen : boolean;
+    reply_ack_sent          : boolean;
 
 ASSIGN
     init(client_request_state)   := sending;
@@ -414,6 +414,7 @@ ASSIGN
     
 FAIRNESS
     running
+
 
 -- =========================================================
 -- Extended Server
@@ -528,6 +529,7 @@ DEFINE
 FAIRNESS
     running
 
+
 -- =========================================================
 -- System wrapper
 -- =========================================================
@@ -535,20 +537,22 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client  : process ClientExtended(request_queue, ack_queue, reply_ack_queue);
+    client : process ClientExtended(request_queue, ack_queue, reply_ack_queue);
     request_prod_toggles : array 0..1 of boolean;
 
     request_cons_toggles : array 0..1 of boolean;
 
-    ack_prod_toggles     : array 0..1 of boolean;
+    ack_prod_toggles : array 0..1 of boolean;
 
-    ack_cons_toggles     : array 0..1 of boolean;
+    ack_cons_toggles : array 0..1 of boolean;
+
     reply_ack_prod_toggles : array 0..1 of boolean;
+
     reply_ack_cons_toggles : array 0..1 of boolean;
 
     server1 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 0, client.ack_source);
-    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 1, client.ack_source);
 
+    server2 : process ServerExtended(request_queue, ack_queue, reply_ack_queue, 1, client.ack_source);
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : process QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
@@ -562,11 +566,11 @@ ASSIGN
     ack_prod_toggles[1] := server2.ack_toggle;
     ack_cons_toggles[0] := client.ack_toggle;
     ack_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
-
     reply_ack_prod_toggles[0] := client.reply_ack_toggle;
     reply_ack_prod_toggles[1] := FALSE;
     reply_ack_cons_toggles[0] := server1.reply_ack_toggle;
     reply_ack_cons_toggles[1] := server2.reply_ack_toggle;
+
 
 -- =========================================================
 --  Synchronization Module
