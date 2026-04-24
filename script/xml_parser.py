@@ -48,10 +48,10 @@ def parse_fault_model(xml_path):
         raise ValueError("Missing <model> in XML")
     model_file = model_file.strip()
 
-    # <protocol-type>  R or RR  
+    # <protocol-type>  R, RR or RRA
     protocol_type = root.findtext("protocol-type")
-    if protocol_type not in ("R", "RR") or protocol_type is None:
-        raise ValueError(f"<protocol-type> must be 'R' or 'RR', got '{protocol_type}'")
+    if protocol_type is None or protocol_type.strip().upper() not in ("R", "RR", "RRA"):
+        raise ValueError(f"<protocol-type> must be 'R', 'RR', or 'RRA', got '{protocol_type}'")
     else:
         protocol_type = protocol_type.strip().upper()
 

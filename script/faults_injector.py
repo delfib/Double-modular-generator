@@ -4,8 +4,8 @@ import re
 from xml_parser import parse_fault_model
 from smv_utils  import load_smv, save_smv, find_module
 from injectors  import create_injector
-from builders   import build_extended_queue, build_extended_wrapper, build_sync_module, patch_non_target_module_RR
-
+from builders   import (build_extended_queue, build_extended_wrapper, build_sync_module, 
+                        build_non_target_module, transform_RR_client, transform_RRA_client, transform_RRA_server)
 
 # ---------------------------------------------------------------------------
 # SMV module helpers
@@ -64,14 +64,17 @@ class FaultInjectionEngine:
             target_text, target, f'{target}Extended', n
         )
 
-        # --- Build a patched non-target module for RR protocol ---
+        if protocol_type == 'RR' and target == 'Client' and n > 1:
+            extended_target = transform_RR_client(extended_target, n)
+        if protocol_type == 'RRA' and target == 'Client' and n > 1:
+            extended_target = transform_RRA_client(extended_target, n) # goback
+        if protocol_type == 'RRA' and target == 'Server' and n > 1:
+            extended_target = transform_RRA_server(extended_target, n) # goback
+            
+        # --- Build an extended non-target module for RR and RRA protocol --- goback
         patched_non_target = None
-        if protocol_type == 'RR' and n > 1:
-            non_target      = 'Client' if target == 'Server' else 'Server'
-            non_target_text = get_module_text(smv_content, non_target)
-            patched_non_target = patch_non_target_module_RR(
-                non_target_text, non_target, f'{non_target}Extended'
-            )
+        if n > 1:
+            patched_non_target = build_non_target_module(smv_content, protocol_type, target, n)
 
         # --- 3. Build extended queue (ONLY if redundancy > 1) ---
         if n > 1:

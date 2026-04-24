@@ -1,5 +1,7 @@
 import re
 
+from smv_utils import get_module_text
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -104,12 +106,13 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
     return text
 
 
-def build_extended_queue_RR(queue_text, redundancy):
+def build_extended_queue_RR(queue_text, redundancy, target_module):
     """
     Build a single unified QueueExtended module for the RR protocol where
     BOTH the producer and consumer sides are extended to arrays of size n.
     """
     text = _strip_to_fairness(queue_text)
+    is_client_target = target_module.lower() == 'client'
 
     n = redundancy
     array_bound = _array_bound(n)
@@ -130,6 +133,15 @@ def build_extended_queue_RR(queue_text, redundancy):
             text
         )
 
+    if is_client_target and n > 1:
+        # Add producer_id array
+        producer_enum = ', '.join([f'clt{i}' for i in range(n)])
+        text = re.sub(
+            r'(VAR\s*\n)',
+            r'\1' + f'    producer_id : array 0..{3} of {{none, {producer_enum}}};\n',
+            text
+        )
+
     # Replace single inits with per-slot inits for both sides
     for side in ('producer', 'consumer'):
         init_slots = '\n'.join(
@@ -138,6 +150,17 @@ def build_extended_queue_RR(queue_text, redundancy):
         text = re.sub(
             rf'init\(last_{side}_toggle\)\s*:=\s*FALSE;',
             init_slots,
+            text
+        )
+
+    if is_client_target and n > 1:
+        # Initialize producer_id
+        init_pid = '\n'.join(
+            f'    init(producer_id[{i}]) := none;' for i in range(4)
+        )
+        text = re.sub(
+            r'(init\(tail\)\s*:=\s*0;)',
+            r'\1\n' + init_pid,
             text
         )
 
@@ -152,6 +175,26 @@ def build_extended_queue_RR(queue_text, redundancy):
         text,
         flags=re.DOTALL
     )
+
+    if is_client_target and n > 1:
+        # Add next(producer_id[i])
+        pid_cases = []
+        for q in range(4):  # Q_SIZE
+            cases = '\n'.join(
+                f'        tail = {q} & producer_toggles[{i}] != last_producer_toggle[{i}] : clt{i};'
+                for i in range(n)
+            )
+            pid_cases.append(
+                f'    next(producer_id[{q}]) := case\n{cases}\n        TRUE : producer_id[{q}];\n    esac;'
+            )
+
+        pid_block = '\n\n'.join(pid_cases)
+        text = re.sub(
+            r'(next\(tail\)\s*:=\s*case.*?esac;)',
+            r'\1\n\n' + pid_block,
+            text,
+            flags=re.DOTALL
+        )
 
     # Replace next(head) — driven by consumer_toggles array
     head_cases = '\n'.join(
@@ -194,22 +237,37 @@ def build_extended_queue_RR(queue_text, redundancy):
         text,
         flags=re.DOTALL
     )
-
-    # Add the request_consumed DEFINE if not already present
-    if 'request_consumed' not in text:
-        consumed_def = (
-            '    request_consumed := '
+    if is_client_target and n > 1:
+        # Add the request_consumed DEFINE if not already present
+        produced_def = (
+            '    request_produced := '
             + ' | '.join(
-                f'last_consumer_toggle[{i}] != consumer_toggles[{i}]'
+                f'last_producer_toggle[{i}] != producer_toggles[{i}]'
                 for i in range(n)
             )
             + ';\n'
         )
+
         text = re.sub(
             r'(DEFINE\s*\n)',
-            r'\1' + consumed_def,
+            r'\1' + produced_def,
             text
         )
+    else :
+        if 'request_consumed' not in text:
+            consumed_def = (
+                '    request_consumed := '
+                + ' | '.join(
+                    f'last_consumer_toggle[{i}] != consumer_toggles[{i}]'
+                    for i in range(n)
+                )
+                + ';\n'
+            )
+            text = re.sub(
+                r'(DEFINE\s*\n)',
+                r'\1' + consumed_def,
+                text
+            )
 
     return text
 
@@ -361,9 +419,14 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     # Build Extended instances — each gets its index as the last argument
     instance_lines = []
     for i in range(1, n + 1):
-        instance_lines.append(
-            f"{indent}{target_module.lower()}{i} : process {target_module}Extended({params}, {i-1});"
-        )
+        if target_module.lower() == 'client':
+            instance_lines.append(
+                f"{indent}client{i} : process ClientExtended({params}, server.request_source, {i-1});"
+            )
+        else:
+            instance_lines.append(
+                f"{indent}{target_module.lower()}{i} : process {target_module}Extended({params}, {i-1});"
+            )
 
     
     # Declare the four bridge arrays (prod/cons for each queue)
@@ -464,34 +527,767 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
 
     return text
 
-# ------------------------------------------------
-# Non-target module patcher — RR protocol only
-# ------------------------------------------------
-def patch_non_target_module_RR(module_text, original_name, new_name):
-    """Produce a renamed copy of the non-target module to use inside Extended()"""
-    # Rename the MODULE declaration
+def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
+    text = nominal_wrapper_text
+
+    # Trim trailing modules
+    last_semi = text.rfind(';')
+    if last_semi != -1:
+        text = text[:last_semi + 1] + '\n'
+
+    # Rename wrapper
+    text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
+
+    if redundancy == 1:
+        text = re.sub(
+            rf'process\s+{target_module}\(',
+            f'process {target_module}Extended(',
+            text
+        )
+        return text
+
+    n = redundancy
+    is_server_target = target_module.lower() != 'client'
+
+    channels = ["request", "ack", "reply_ack"]
+
+    # Find target instance
+    instance_pattern = rf'(\s*)(\w+)\s*:\s*process\s+{re.escape(target_module)}\(([^)]*)\);'
+    match = re.search(instance_pattern, text)
+    if not match:
+        raise ValueError(f"Could not find instance of {target_module}")
+
+    indent = match.group(1)
+    params = match.group(3)
+
+    # Build instances
+    instance_lines = []
+    for i in range(n):
+        if target_module.lower() == 'client':
+            instance_lines.append(
+                f"{indent}client{i+1} : process ClientExtended({params}, {i}, server.request_source);"
+            )
+        else:
+            instance_lines.append(
+                f"{indent}server{i+1} : process ServerExtended({params}, {i}, client.ack_source);"
+            )
+
+    # Bridge arrays
+    bridge_lines = []
+    for ch in channels:
+        bridge_lines.append(f"{indent}{ch}_prod_toggles : array 0..{n-1} of boolean;")
+        bridge_lines.append(f"{indent}{ch}_cons_toggles : array 0..{n-1} of boolean;")
+
+    # Replace Queue instances
+    queue_pattern = r'(\s*\w+\s*:\s*process\s+Queue\(([^)]*)\);)'
+    queue_matches = list(re.finditer(queue_pattern, text))
+
+    if len(queue_matches) < len(channels):
+        raise ValueError("Not enough Queue instances")
+
+    # Build new queue lines first
+    new_queue_lines = []
+    for ch in channels:
+        new_queue_lines.append(
+            f": process QueueExtended(Q_SIZE, {ch}_prod_toggles, {ch}_cons_toggles);"
+        )
+
+    # Apply replacements BACKWARDS
+    for i in reversed(range(len(channels))):
+        q_match = queue_matches[i]
+        prefix = q_match.group(0).split(':')[0]
+        new_line = prefix + new_queue_lines[i]
+        text = text[:q_match.start()] + new_line + text[q_match.end():]
+
+    # ASSIGN wiring
+    assign_lines = []
+
+    def dummy(i):
+        return f"{i} := FALSE;   -- dummy, stays FALSE forever"
+
+    if is_server_target:
+        # client is single
+        client_name = "client"
+
+        for ch in channels:
+            if ch == "request":
+                assign_lines.append(f"    {ch}_prod_toggles[0] := {client_name}.request_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := FALSE;   -- dummy, stays FALSE forever")
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := server{i+1}.request_toggle;")
+
+            elif ch == "ack":
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := server{i+1}.ack_toggle;")
+                assign_lines.append(f"    {ch}_cons_toggles[0] := {client_name}.ack_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := FALSE;   -- dummy, stays FALSE forever")
+
+            elif ch == "reply_ack":
+                assign_lines.append(f"    {ch}_prod_toggles[0] := {client_name}.reply_ack_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := FALSE;")
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := server{i+1}.reply_ack_toggle;")
+
+    else:
+        # clients replicated
+        for ch in channels:
+            if ch == "request":
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := client{i+1}.request_toggle;")
+                assign_lines.append(f"    {ch}_cons_toggles[0] := server.request_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := FALSE;")
+
+            elif ch == "ack":
+                assign_lines.append(f"    {ch}_prod_toggles[0] := server.ack_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := FALSE;")
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := client{i+1}.ack_toggle;")
+
+            elif ch == "reply_ack":
+                for i in range(n):
+                    assign_lines.append(f"    {ch}_prod_toggles[{i}] := client{i+1}.reply_ack_toggle;")
+                assign_lines.append(f"    {ch}_cons_toggles[0] := server.reply_ack_toggle;")
+                for i in range(1, n):
+                    assign_lines.append(f"    {ch}_cons_toggles[{i}] := FALSE;")
+
+    assign_block = "\n".join(assign_lines)
+
+    # Inject instances
+    new_instance_block = "\n".join(bridge_lines + instance_lines)
+    text = text[:match.start()] + new_instance_block + text[match.end():]
+
+    # ASSIGN block
+    if 'ASSIGN' not in text:
+        text += f"\nASSIGN\n{assign_block}\n"
+    else:
+        text = re.sub(r'(ASSIGN\s*\n)', r'\1' + assign_block + '\n', text)
+
+    return text
+
+
+""" Apply RR-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
+def transform_RR_client(text, n):
+    # 1. Add ack_owner + client_id parameters
     text = re.sub(
-        rf'MODULE\s+{re.escape(original_name)}\s*\(',
-        f'MODULE {new_name}(',
-        module_text
+        r'MODULE\s+ClientExtended\(([^)]*)\)',
+        r'MODULE ClientExtended(\1, ack_owner)',
+        text
     )
 
-    # Index all unindexed toggle references to slot [0]
+    # 2. Add request_sent variable
     text = re.sub(
-        r'(\w+\.last_\w+_toggle)(?!\[)',
+        r'(ack_received\s*:\s*boolean;)',
+        r'\1\n    request_sent : boolean;',
+        text
+    )
+    
+    # 3. Initialize request_sent
+    text = re.sub(
+        r'(init\(ack_received\)\s*:=\s*TRUE;)',
+        r'\1\n    init(request_sent) := FALSE;',
+        text
+    )
+
+    # 4. Inject request_produced guard
+    text = text.replace(
+        '!request_queue.full & ack_received',
+        '!request_queue.full & ack_received & !request_queue.request_produced'
+    )
+
+    # 5. Fix ACK transitions using self_id (safe replace)
+    ack_condition = (
+        'client_ack_state = receiving & !ack_queue.empty '
+        '& request_sent & ack_owner = self_id'
+    )
+
+    text = re.sub(
+        r'client_ack_state = receiving & !ack_queue\.empty(?!\s*& request_sent)',
+        ack_condition,
+        text
+    )
+
+    # 6. Fix ack_toggle transition
+    text = re.sub(
+        r'(next\(ack_toggle\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: !ack_toggle;)',
+        lambda m: m.group(1) + f'        {ack_condition} : !ack_toggle;',
+        text,
+        flags=re.DOTALL
+    )
+
+    # 7. Fix ack_received transition
+    text = re.sub(
+        r'(next\(ack_received\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: TRUE;)',
+        lambda m: m.group(1) + f'        {ack_condition} : TRUE;',
+        text,
+        flags=re.DOTALL
+    )
+
+    # 8. Add request_sent transition
+    request_sent_block = f"""
+    next(request_sent) := case
+        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;
+        {ack_condition} : FALSE;
+        TRUE : request_sent;
+    esac;
+    """
+
+    text = re.sub(
+        r'(FAIRNESS)',
+        request_sent_block + '\nFAIRNESS',
+        text
+    )
+
+    # 9. Add self_id DEFINE (scalable identity mapping)
+    self_id_def = "DEFINE\n" + _build_self_id_define(n) + "\n"
+
+    if 'DEFINE' not in text:
+        text = re.sub(
+            r'(FAIRNESS)',
+            self_id_def + r'\1',
+            text
+        )
+
+    return text
+
+""" Apply RRA-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
+def transform_RRA_client(text, n):
+
+    # 1. Add ack_owner parameter 
+    if 'ack_owner' not in text:
+        text = re.sub(
+            r'MODULE\s+ClientExtended\(([^)]*)\)',
+            r'MODULE ClientExtended(\1, ack_owner)',
+            text
+        )
+
+    # 2. Add missing RRA variables 
+    text = re.sub(
+        r'(ack_received\s*:\s*boolean;)',
+        r'\1\n'
+        r'    request_sent : boolean;\n'
+        r'    pending_reply_ack : boolean;\n'
+        r'    reply_ack_consume_marker : boolean;',
+        text
+    )
+
+    # 3. Initialize missing variables 
+    text = re.sub(
+        r'(init\(ack_received\)\s*:=\s*FALSE;)',
+        r'\1\n'
+        r'    init(request_sent) := FALSE;\n'
+        r'    init(pending_reply_ack) := FALSE;\n'
+        r'    init(reply_ack_consume_marker) := FALSE;',
+        text
+    )
+
+    # ------------------------------------------------------------
+    # 4. Strengthen request sending condition 
+    # ------------------------------------------------------------
+    text = text.replace(
+        '!request_queue.queue_full & reply_ack_sent',
+        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced'
+    )
+
+    # 5. ACK condition 
+    ack_condition = (
+        'client_ack_state = receiving & !ack_queue.queue_empty '
+        '& request_sent & ack_owner = self_id'
+    )
+
+    text = re.sub(
+        r'client_ack_state = receiving & !ack_queue\.queue_empty(?!\s*& request_sent)',
+        ack_condition,
+        text
+    )
+
+    # 6. Fix ack_toggle transition
+    text = re.sub(
+        r'(next\(ack_toggle\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: !ack_toggle;)',
+        lambda m: m.group(1) + f'        {ack_condition} : !ack_toggle;',
+        text,
+        flags=re.DOTALL
+    )
+
+    # 7. Fix ack_received transition
+    text = re.sub(
+        r'(next\(ack_received\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: TRUE;)',
+        lambda m: m.group(1) + f'        {ack_condition} : TRUE;',
+        text,
+        flags=re.DOTALL
+    )
+
+    # 8. Add request_sent transition 
+    if 'next(request_sent)' not in text:
+        request_sent_block = f"""
+        next(request_sent) := case
+            client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : TRUE;
+            {ack_condition} : FALSE;
+            TRUE : request_sent;
+        esac;
+        """
+
+        text = re.sub(
+            r'(FAIRNESS)',
+            request_sent_block + '\nFAIRNESS',
+            text
+        )
+    
+    # 9. Add pending_reply_ack + consume marker transitions
+    if 'next(pending_reply_ack)' not in text:
+        pending_block = """
+        next(pending_reply_ack) := case
+            client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;
+            pending_reply_ack & (
+                (reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker)
+            ) : FALSE;
+            TRUE : pending_reply_ack;
+        esac;
+
+        next(reply_ack_consume_marker) := case
+            client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : reply_ack_queue.last_consumer_toggle[0];
+            TRUE : reply_ack_consume_marker;
+        esac;
+        """
+
+        text = re.sub(
+            r'(FAIRNESS)',
+            pending_block + '\nFAIRNESS',
+            text
+        )
+
+    # 10. Add self_id DEFINE (scalable)
+    if 'self_id :=' not in text:
+        self_id_def = "DEFINE\n" + _build_self_id_define(n) + "\n"
+        text = re.sub(r'(FAIRNESS)', self_id_def + r'\1', text)
+
+    return text
+
+""" Apply RRA-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
+def transform_RRA_server(text, n):
+    # 1. Add reply_ack_owner parameter
+    if 'reply_ack_owner' not in text:
+        text = re.sub(
+            r'MODULE\s+ServerExtended\(([^)]*)\)',
+            r'MODULE ServerExtended(\1, reply_ack_owner)',
+            text
+        )
+
+    # 2. Strengthen server_request_state condition
+    text = text.replace(
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received',
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed'
+    )
+
+    # Restrict ALL reply_ack-related guards with ownership (single pass)
+    text = re.sub(
+        r'(server_reply_ack_state\s*=\s*receiving\s*&\s*!reply_ack_queue\.queue_empty)(\s*:[^;]*;)',
+        r'\1 & reply_ack_owner = self_id\2',
+        text
+    )
+
+    # 9. Add DEFINE self_id (scales with redundancy)
+    if 'self_id :=' not in text:
+        lines = ["    self_id := case"]
+        for i in range(n):
+            lines.append(f"        server_id = {i} : srv{i};")
+        lines.append("    esac;")
+
+        define_block = "DEFINE\n" + "\n".join(lines) + "\n"
+
+        text = re.sub(r'(FAIRNESS)', define_block + r'\1', text)
+
+    return text
+
+
+def _build_self_id_define(n):
+    cases = '\n'.join(
+        f'            client_id = {i} : clt{i};'
+        for i in range(n)
+    )
+    return (
+        "    self_id :=\n"
+        "        case\n"
+        f"{cases}\n"
+        "        esac;\n"
+    )
+
+
+def build_RR_non_target_client(smv_content):
+    """Returns the non target extended client module"""
+    text = get_module_text(smv_content, 'Client')
+
+    text = re.sub(
+        r'MODULE\s+Client\s*\(',
+        'MODULE ClientExtended(',
+        text
+    )
+
+    text = re.sub(
+        r'(\w+\.last_(?!producer_id)\w+_toggle)(?!\[)',
         r'\1[0]',
         text
     )
 
     return text
 
+def build_RR_non_target_server(smv_content, n):
+    """Returns the non targer extended server module"""
+    text = get_module_text(smv_content, 'Server')
+
+    # 1. Rename module
+    text = re.sub(
+        r'MODULE\s+Server\s*\(',
+        'MODULE ServerExtended(',
+        text
+    )
+
+    # 2. Index queue toggle accesses → [0]
+    text = re.sub(
+        r'(\w+\.last_(?:producer|consumer)_toggle)(?!\[)',
+        r'\1[0]',
+        text
+    )
+
+    # 3. Add new VAR fields
+    new_vars = (
+        "    request_source : {none, " + ", ".join(f"clt{i}" for i in range(n)) + "};\n"
+        "    pending_ack : boolean;\n"
+        "    ack_consume_marker : boolean;"
+    )
+
+    text = re.sub(
+        r'(request_received\s*:\s*boolean;)',
+        r'\1\n' + new_vars,
+        text
+    )
+
+    # 4. Initialize new vars
+    init_block = (
+        "    init(request_source) := none;\n"
+        "    init(pending_ack) := FALSE;\n"
+        "    init(ack_consume_marker) := FALSE;"
+    )
+
+    text = re.sub(
+        r'(init\(request_received\)\s*:=\s*FALSE;)',
+        r'\1\n' + init_block,
+        text
+    )
+
+    # 5. Strengthen request receive condition
+    text = text.replace(
+        'server_request_state = receiving & !request_queue.empty',
+        'server_request_state = receiving & !request_queue.empty & !pending_ack'
+    )
+
+    # 6. Add request_source logic
+    request_source_block = """
+    next(request_source) := case
+        server_request_state = receiving & !request_queue.empty & !pending_ack :
+            request_queue.producer_id[request_queue.head];
+        TRUE : request_source;
+    esac;
+    """
+
+    # 7. Add pending_ack logic (dynamic over n)
+    consume_cases = " |\n            ".join(
+        f"(request_source = clt{i} & ack_queue.last_consumer_toggle[{i}] != ack_consume_marker)"
+        for i in range(n)
+    )
+
+    pending_block = f"""
+    next(pending_ack) := case
+        server_ack_state = sending & !ack_queue.full & request_received : TRUE;
+        pending_ack & (
+            {consume_cases}
+        ) : FALSE;
+        TRUE : pending_ack;
+    esac;
+    """
+
+    # 8. Add ack_consume_marker logic
+    marker_cases = "\n".join(
+        f"        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt{i} : ack_queue.last_consumer_toggle[{i}];"
+        for i in range(n)
+    )
+
+    marker_block = f"""
+    next(ack_consume_marker) := case
+    {marker_cases}
+        TRUE : ack_consume_marker;
+    esac;
+    """
+
+    # 9. Inject new blocks before FAIRNESS
+    injection = request_source_block + "\n" + pending_block + "\n" + marker_block + "\n"
+
+    text = re.sub(
+        r'(FAIRNESS)',
+        injection + r'\1',
+        text
+    )
+
+    return text
+
+def build_RRA_non_target_client(smv_content, n):
+    text = get_module_text(smv_content, 'Client')
+
+    # 1. Rename module
+    text = re.sub(
+        r'MODULE\s+Client\s*\(',
+        'MODULE ClientExtended(',
+        text
+    )
+
+    # 2. Index queue toggle accesses → [0]
+    text = re.sub(
+        r'(\w+\.last_(?:producer|consumer)_toggle)(?!\[)',
+        r'\1[0]',
+        text
+    )
+
+    # 3. Add new VAR fields
+    servers = ', '.join(f'srv{i}' for i in range(n))
+    new_vars = (
+        f"    ack_source : {{none, {servers}}};\n"
+        "    pending_reply_ack : boolean;\n"
+        "    reply_ack_consume_marker : boolean;\n"
+    )
+
+    # per-server seen flags
+    seen_flags = '\n'.join(
+        f"    client_ack_srv{i}_seen : boolean;"
+        for i in range(n)
+    )
+
+    text = re.sub(
+        r'(ack_received\s*:\s*boolean;)',
+        r'\1\n' + new_vars + seen_flags,
+        text
+    )
+
+    # 4. Initialize new vars
+    init_block = (
+        "    init(ack_source) := none;\n"
+        "    init(pending_reply_ack) := FALSE;\n"
+        "    init(reply_ack_consume_marker) := FALSE;\n"
+    )
+
+    seen_init = '\n'.join(
+        f"    init(client_ack_srv{i}_seen) := FALSE;"
+        for i in range(n)
+    )
+
+    text = re.sub(
+        r'(init\(ack_received\)\s*:=\s*FALSE;)',
+        r'\1\n' + init_block + seen_init,
+        text
+    )
+
+    # 5. Strengthen request send condition
+    text = text.replace(
+        '!request_queue.queue_full & reply_ack_sent',
+        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack'
+    )
+
+    # 7. ack_source logic
+    ack_source_cases = '\n'.join(
+        f"        client_ack_state = receiving & ack_queue.last_producer_toggle[{i}] != client_ack_srv{i}_seen : srv{i};"
+        for i in range(n)
+    )
+
+    ack_source_block = f"""
+    next(ack_source) := case
+    {ack_source_cases}
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack : none;
+        TRUE : ack_source;
+    esac;
+    """
+
+    # 8. pending_reply_ack logic
+    consume_cases = " |\n            ".join(
+        f"(ack_source = srv{i} & reply_ack_queue.last_consumer_toggle[{i}] != reply_ack_consume_marker)"
+        for i in range(n)
+    )
+
+    pending_block = f"""
+    next(pending_reply_ack) := case
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;
+        pending_reply_ack & (
+            {consume_cases}
+        ) : FALSE;
+        TRUE : pending_reply_ack;
+    esac;
+    """
+
+    # 9. reply_ack_consume_marker logic
+    marker_cases = '\n'.join(
+        f"        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received & ack_source = srv{i} : reply_ack_queue.last_consumer_toggle[{i}];"
+        for i in range(n)
+    )
+
+    marker_block = f"""
+    next(reply_ack_consume_marker) := case
+    {marker_cases}
+        TRUE : reply_ack_consume_marker;
+    esac;
+    """
+
+    # 10. per-server seen tracking
+    seen_blocks = '\n\n'.join(
+        f"""
+    next(client_ack_srv{i}_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty &
+        ack_queue.last_producer_toggle[{i}] != client_ack_srv{i}_seen :
+            ack_queue.last_producer_toggle[{i}];
+        TRUE : client_ack_srv{i}_seen;
+    esac;
+    """
+        for i in range(n)
+    )
+
+    # 11. Inject everything before FAIRNESS
+    injection = (
+        ack_source_block
+        + pending_block
+        + marker_block
+        + seen_blocks
+        + "\n"
+    )
+
+    text = re.sub(
+        r'(FAIRNESS)',
+        injection + r'\1',
+        text
+    )
+
+    return text
+
+def build_RRA_non_target_server(smv_content, n):
+    """Build the extended non-target Server for RRA protocol."""
+    text = get_module_text(smv_content, 'Server')
+
+    # 1. Rename module
+    text = re.sub(
+        r'MODULE\s+Server\s*\(',
+        'MODULE ServerExtended(',
+        text
+    )
+
+    text = re.sub(
+        r'(\w+\.last_(?:producer|consumer)_toggle)(?!\[)',
+        r'\1[0]',
+        text
+    )
+
+    # ------------------------------------------------------------
+    # 3. VAR injection (dynamic clients)
+    # ------------------------------------------------------------
+    clients = ', '.join(f'clt{i}' for i in range(n))
+
+    var_block = (
+        f"    request_source : {{none, {clients}}};\n"
+        "    pending_ack : boolean;\n"
+        "    ack_consume_marker : boolean;"
+    )
+
+    text = re.sub(
+        r'(server_ack_state\s*:\s*\{[^}]+\};)',
+        r'\1\n' + var_block,
+        text
+    )
+
+    # 4. Inject INIT block
+    text = re.sub(
+        r'(init\(ack_toggle\)\s*:=\s*FALSE;)',
+        r'\1\n'
+        r'    init(request_source) := none;\n'
+        r'    init(pending_ack) := FALSE;\n'
+        r'    init(ack_consume_marker) := FALSE;',
+        text
+    )
+
+    # 5. Strengthen request transition (RRA semantics)
+    text = text.replace(
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received',
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack'
+    )
+
+    # 6. Add new transitions
+    request_source_block = """
+    next(request_source) := case
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack :
+            request_queue.producer_id[request_queue.head];
+        TRUE : request_source;
+    esac;
+    """
+
+    # pending_ack (dynamic OR over clients)
+    consume_cases = " |\n            ".join(
+        f"(request_source = clt{i} & ack_queue.last_consumer_toggle[{i}] != ack_consume_marker)"
+        for i in range(n)
+    )
+
+    pending_block = f"""
+    next(pending_ack) := case
+        server_ack_state = sending & !ack_queue.queue_full & request_received : TRUE;
+        pending_ack & (
+            {consume_cases}
+        ) : FALSE;
+        TRUE : pending_ack;
+    esac;
+    """
+
+    # ack_consume_marker (one case per client)
+    marker_cases = '\n'.join(
+        f"        server_ack_state = sending & !ack_queue.queue_full & request_received & request_source = clt{i} : ack_queue.last_consumer_toggle[{i}];"
+        for i in range(n)
+    )
+
+    marker_block = f"""
+    next(ack_consume_marker) := case
+    {marker_cases}
+        TRUE : ack_consume_marker;
+    esac;
+    """
+
+    extra_block = request_source_block + pending_block + marker_block
+
+    text = re.sub(
+        r'(next\(memory_cache\)\s*:=\s*case)',
+        extra_block + r'\n\1',
+        text
+    )
+
+    return text
+
+def build_non_target_module(smv_content, protocol, target, n):
+    """Returns the extended non-target module when needed and None if no transformation is required."""
+    if protocol == 'RR':
+        if target == 'Server':
+            return build_RR_non_target_client(smv_content)
+        elif target == 'Client':
+            return build_RR_non_target_server(smv_content, n)
+
+    if protocol == 'RRA':
+        if target == 'Server':
+            return build_RRA_non_target_client(smv_content, n)
+        elif target == 'Client':
+            return build_RRA_non_target_server(smv_content, n)
+
+    return None
 
 def build_extended_queue(queue_text, redundancy, target_module, protocol_type):
     """Invoke the correct queue-extension builder based on protocol type."""
     if protocol_type == 'R':
         return [build_extended_queue_R(queue_text, redundancy, target_module)]
-    elif protocol_type == 'RR':
-        return [build_extended_queue_RR(queue_text, redundancy)]
+    elif protocol_type in ('RR', 'RRA'):            # goback
+        return [build_extended_queue_RR(queue_text, redundancy, target_module)]
     else:
         raise ValueError(f"Unknown protocol type: '{protocol_type}'")
 
@@ -502,6 +1298,8 @@ def build_extended_wrapper(nominal_wrapper_text, target_module, redundancy, prot
         return build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy)
     elif protocol_type == 'RR':
         return build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy)
+    elif protocol_type == 'RRA':
+        return build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy)
     else:
         raise ValueError(f"Unknown protocol type: '{protocol_type}'")
 

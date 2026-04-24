@@ -29,3 +29,23 @@ def find_module(content, module_name):
             return start, j
 
     return start, len(lines)
+
+def get_module_text(smv_content, module_name):
+    """Extract the full text of a named MODULE from an SMV file."""
+    start, end = find_module(smv_content, module_name)
+    lines = smv_content.splitlines(keepends=True)
+    return ''.join(lines[start:end])
+
+
+def strip_main_module(smv_content):
+    """Remove MODULE main from the nominal SMV content."""
+    result = re.sub(
+        r'\n*--[^\n]*\n--[^\n]*[Mm]ain[^\n]*\n--[^\n]*\nMODULE main.*',
+        '',
+        smv_content,
+        flags=re.DOTALL
+    )
+    if 'MODULE main' in result:
+        result = re.sub(r'\n*MODULE main.*', '', result, flags=re.DOTALL)
+
+    return result.rstrip()

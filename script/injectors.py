@@ -70,9 +70,9 @@ class BaseInjector:
         # Update queue slot references for redundant modules
         if redundancy > 1:
             text = self._update_queue_references(text, original_name)
-            # Add the !request_queue.request_consumed guard if protocol = RR
-            text = self._inject_request_consumed_guard(text)
-
+            # Add the !request_queue.request_ guard if protocol = RR
+            redundant_side = original_name.lower()  # "client" or "server"
+            text = self._inject_request_guard(text, redundant_side)
         return text
 
     def _inject_fault_mode_var(self, text):
@@ -148,28 +148,37 @@ class BaseInjector:
 
         return text
 
-    def _inject_request_consumed_guard(self, text):
-        """For RR-protocol modules add '& !request_queue.request_consumed'"""
-        # Only apply if this module consumes from request_queue
+    def _inject_request_guard(self, text, redundant_side):
+        """Inject RR/RRA guards depending on protocol structure."""
+
+        # --- RRA case (no request_produced / consumed exists) ---
+        if 'queue_empty' in text or 'queue_full' in text:
+            # RRA uses queue_full / queue_empty → no extra guards needed
+            return text
         if 'request_queue' not in text:
             return text
- 
-        consumed_guard = '!request_queue.request_consumed'
- 
+
+        if redundant_side == 'client':
+            guard = '!request_queue.request_produced'
+        else:
+            guard = '!request_queue.request_consumed'
+
         def add_guard(m):
             line = m.group(0)
-            if consumed_guard in line:
-                return line  
+
+            if guard in line:
+                return line
             if re.search(r'\w+_state\s*=\s*received\b', line):
-                return line   # already-received state transition, no guard needed
-            # Insert the guard right after !request_queue.empty
-            return line.replace('!request_queue.empty', f'!request_queue.empty & {consumed_guard}')
- 
+                return line
+
+            return line.replace('!request_queue.empty', f'!request_queue.empty & {guard}')
+
         text = re.sub(
             r'[^\n]*!request_queue\.empty[^\n]*',
             add_guard,
             text
         )
+
         return text
 
     def _update_queue_references(self, text, original_name):
