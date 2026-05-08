@@ -1,0 +1,356 @@
+-- =========================================================
+-- Extended Queue (handles 2 servers)
+-- =========================================================
+MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles)
+VAR
+    head               : 0..3;
+    tail               : 0..3;
+    last_client_toggle : boolean;
+    last_server_toggle : array 0..1 of boolean;
+    next_server_turn   : 0..1;  -- tracks whose turn to consume
+
+ASSIGN
+    init(head) := 0;
+    init(tail) := 0;
+    init(last_client_toggle) := FALSE;
+    init(last_server_toggle[0]) := FALSE;
+    init(last_server_toggle[1]) := FALSE;
+    init(next_server_turn) := {0,1};
+
+    next(tail) := case
+        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;
+        TRUE : tail;
+    esac;
+
+    next(head) := case
+        (server_toggles[0] != last_server_toggle[0]) : (head + 1) mod Q_SIZE;
+        (server_toggles[1] != last_server_toggle[1]) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+    next(last_client_toggle) := case
+        (client_toggle != last_client_toggle) : client_toggle;
+        TRUE : last_client_toggle;
+    esac;
+
+    next(last_server_toggle[0]) := case
+        (server_toggles[0] != last_server_toggle[0]) : server_toggles[0];
+        TRUE : last_server_toggle[0];
+    esac;
+
+    next(last_server_toggle[1]) := case
+        (server_toggles[1] != last_server_toggle[1]) : server_toggles[1];
+        TRUE : last_server_toggle[1];
+    esac;
+
+    next(next_server_turn) := case
+        (server_toggles[0] != last_server_toggle[0]) : 1;  
+        (server_toggles[1] != last_server_toggle[1]) : 0;  
+        TRUE : next_server_turn;
+    esac;
+
+DEFINE
+    full  := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+
+-- =========================================================
+-- Client module
+-- =========================================================
+MODULE Client(queue)
+VAR
+    client_state : {sending, sent};
+    request_toggle : boolean;  
+    requests_sent : 0..100;         
+
+ASSIGN
+    init(client_state) := sending;
+    init(request_toggle) := FALSE;
+    init(requests_sent) := 0;
+
+    next(client_state) :=
+        case
+            client_state = sending & queue.full : sending;
+            client_state = sending & !queue.full : sent;
+            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & queue.full : sent;
+            TRUE : client_state;
+        esac;
+ 
+    next(request_toggle) := case
+        client_state = sending & !queue.full : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+     next(requests_sent) := case
+        client_state = sending & !queue.full & requests_sent < 100 : requests_sent + 1;                   
+        TRUE : requests_sent;                                                    
+    esac;
+
+
+
+-- =========================================================
+-- Server module 
+-- =========================================================
+MODULE ServerExtended(queue, server_id)
+VAR
+    fault_mode : {none, stuck_receiving, stuck_received};
+    server_state : {receiving, received};
+    request_toggle : boolean;  
+    requests_received : 0..100;
+ASSIGN
+    init(fault_mode) := none;
+
+    init(server_state) := receiving;
+    init(request_toggle) := FALSE;
+    init(requests_received) := 0;
+
+    next(fault_mode) :=
+        case
+            fault_mode = none : {none, stuck_receiving, stuck_received};
+            TRUE              : fault_mode;
+        esac;
+
+    next(server_state) :=
+        case
+        fault_mode = stuck_receiving : receiving;
+        fault_mode = stuck_received : received;
+
+            server_state = receiving & queue.empty : receiving;
+            server_state = receiving & !queue.empty & queue.next_server_turn = server_id : received;
+            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id]: receiving;
+            server_state = received & queue.empty : received;
+            TRUE : server_state;
+        esac;
+
+    next(request_toggle) := case
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id : !request_toggle;
+        TRUE : request_toggle;                                                    
+    
+    esac;
+
+    next(requests_received) := case
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id & requests_received < 100 : requests_received + 1;
+        TRUE : requests_received;                                                    
+    esac;
+
+
+
+-- =========================================================
+-- Extended model wrapper
+-- =========================================================
+MODULE ExtendedR()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    server_toggles : array 0..1 of boolean;
+
+    client  : Client(queue);
+    server1 : ServerExtended(queue, 0);
+    server2 : ServerExtended(queue, 1);
+
+    queue   : QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
+
+ASSIGN
+    server_toggles[0] := server1.request_toggle;
+    server_toggles[1] := server2.request_toggle;
+
+
+-- =========================================================
+-- Main module
+-- =========================================================
+MODULE main
+VAR
+    extended  : ExtendedR();
+
+
+
+-- SAFETY PROPERTIES
+-- =================
+
+-- Queue tail and head are always within bounds
+SPEC AG (extended.queue.head >= 0 & extended.queue.head < extended.Q_SIZE)
+SPEC AG (extended.queue.tail >= 0 & extended.queue.tail < extended.Q_SIZE)
+
+-- Full and empty are mutually exclusive
+SPEC AG !(extended.queue.full & extended.queue.empty)
+
+-- Client doesn't produce when queue is full
+SPEC AG !(extended.queue.full & extended.client.client_state = sending)
+
+-- Queue full definition is correct
+SPEC AG (extended.queue.full <-> ((extended.queue.tail + 1) mod extended.Q_SIZE = extended.queue.head))
+
+-- Queue empty definition is correct
+SPEC AG (extended.queue.empty <-> (extended.queue.tail = extended.queue.head))
+
+-- LIVENESS PROPERTIES
+-- ===================
+
+-- If client wants to send, it will eventually send (no starvation)
+SPEC AG (extended.client.client_state = sending -> AF extended.client.client_state = sent)
+
+-- Queue never stays empty forever 
+SPEC AG (extended.queue.empty -> AF !extended.queue.empty)
+
+-- FUNCTIONAL CORRECTNESS
+-- ======================
+
+-- Every produced message is eventually consumed
+SPEC AG (extended.client.client_state = sent -> AF (extended.server1.server_state = received | extended.server1.server_state = received))
+
+-- Client only transitions from sending to sent when queue is not full
+SPEC AG ((extended.client.client_state = sending & 
+          AX extended.client.client_state = sent) -> !extended.queue.full)
+
+-- Server only transitions from receiving to received when queue is not empty
+SPEC AG ((extended.server1.server_state = receiving & 
+          AX extended.server1.server_state = received) -> !extended.queue.empty)
+
+-- If the server enters 'received' state, the queue head must eventually advance
+SPEC AG ((extended.server1.server_state = received) -> AF (extended.server1.request_toggle = extended.queue.last_server_toggle[0]))
+
+
+
+-- Client only transitions from sending to sent when queue is not full
+SPEC AG ((extended.client.client_state = sending & 
+          AX extended.client.client_state = sent) -> !extended.queue.full)
+
+
+-- Server never recevies more requests than client sent  
+SPEC AG (extended.server1.requests_received <= extended.client.requests_sent)
+
+-- Every request sent is eventually received
+SPEC AG (extended.client.requests_sent > extended.server1.requests_received ->
+    AF (extended.server1.requests_received = extended.client.requests_sent))
+
+
+-- TOGGLE SYNCHRONIZATION
+-- ======================
+
+-- Client toggle changes when producing
+SPEC AG ((extended.client.client_state = sending & !extended.queue.full) -> 
+         AF extended.client.request_toggle != extended.queue.last_client_toggle)
+
+-- Queue tracks client toggle after production
+SPEC AG ((extended.client.client_state = sent & 
+          extended.client.request_toggle != extended.queue.last_client_toggle) ->
+         AF extended.queue.last_client_toggle = extended.client.request_toggle)
+
+-- Queue tracks server toggles after consumption
+SPEC AG ((extended.server1.server_state = received & 
+          extended.server1.request_toggle != extended.queue.last_server_toggle[0]) ->
+         AF extended.queue.last_server_toggle[0] = extended.server1.request_toggle)
+SPEC AG ((extended.server2.server_state = received & 
+          extended.server2.request_toggle != extended.queue.last_server_toggle[1]) ->
+         AF extended.queue.last_server_toggle[1] = extended.server2.request_toggle)
+
+-- server_toggles array always mirrors the real values
+SPEC AG (extended.server_toggles[0] = extended.server1.request_toggle)
+SPEC AG (extended.server_toggles[1] = extended.server2.request_toggle)
+
+-- REACHABILITY PROPERTIES
+-- =======================
+
+-- It's possible to reach a full queue
+SPEC EF extended.queue.full
+
+-- It's possible to reach an empty queue  
+SPEC EF extended.queue.empty
+
+-- It's possible to reach a non-empty and non-full queue
+SPEC EF (!extended.queue.empty & !extended.queue.full)
+
+-- If a server toggles its bit (signals consumption), the queue MUST eventually process it
+SPEC AG ((extended.server1.request_toggle != extended.queue.last_server_toggle[0]) -> 
+         AF (extended.queue.last_server_toggle[0] = extended.server1.request_toggle))
+
+SPEC AG ((extended.server2.request_toggle != extended.queue.last_server_toggle[1]) -> 
+         AF (extended.queue.last_server_toggle[1] = extended.server2.request_toggle))
+
+-- If a server enters 'received' state, the queue head must eventually advance
+SPEC AG ((extended.server1.server_state = received) -> 
+         AF (extended.server1.request_toggle = extended.queue.last_server_toggle[0]))
+         
+SPEC AG ((extended.server2.server_state = received) -> 
+         AF (extended.server2.request_toggle = extended.queue.last_server_toggle[1]))
+
+
+-- MUTUAL EXCLUSION (only one server consumes at a time)
+-- =====================================================
+
+-- Both servers don't consume simultaneously (queue head advances by 1 max)
+DEFINE q :=
+   !((extended.server1.server_state = received &
+      extended.server1.request_toggle != extended.queue.last_server_toggle[0]) &
+     (extended.server2.server_state = received &
+      extended.server2.request_toggle != extended.queue.last_server_toggle[1]));
+
+-- If a server reaches received AND in the next step the queue consumes, then q must hold.
+SPEC AG (
+    (
+      extended.server1.server_state = received 
+      & AX (extended.server1.request_toggle = extended.queue.last_server_toggle[0])
+    )
+    -> q
+)
+
+SPEC AG (
+    (
+      extended.server2.server_state = received 
+      & AX (extended.server2.request_toggle = extended.queue.last_server_toggle[1])
+    )
+    -> q
+)
+
+
+SPEC AG (
+    (extended.server1.server_state = receiving &
+     !extended.queue.empty &
+     extended.queue.next_server_turn = 0)
+    ->
+    AX (extended.server1.server_state = received)
+)
+
+
+SPEC AG (
+    (extended.server2.server_state = receiving &
+     !extended.queue.empty &
+     extended.queue.next_server_turn = 1)
+    ->
+    AX (extended.server2.server_state = received)
+)
+
+SPEC AG (
+    extended.queue.next_server_turn = 1
+    ->
+    AX !(extended.server1.server_state = received &
+         extended.server1.request_toggle != extended.queue.last_server_toggle[0])
+)
+
+SPEC AG (
+    extended.queue.next_server_turn = 0
+    ->
+    AX !(extended.server2.server_state = received &
+         extended.server2.request_toggle != extended.queue.last_server_toggle[1])
+)
+
+
+SPEC AG !(
+    (extended.server1.request_toggle != extended.queue.last_server_toggle[0]) &
+    (extended.server2.request_toggle != extended.queue.last_server_toggle[1])
+)
+
+SPEC AG (
+    (!extended.queue.empty & extended.queue.next_server_turn = 0)
+    ->
+    AF (extended.server1.server_state = received)
+)
+
+SPEC AG (
+    (!extended.queue.empty & extended.queue.next_server_turn = 1)
+    ->
+    AF (extended.server2.server_state = received)
+)
+
+-- NuSMV  UNRC/tesis/double-modular-generator/new/R_Protocol/R_ProtocolExtended.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

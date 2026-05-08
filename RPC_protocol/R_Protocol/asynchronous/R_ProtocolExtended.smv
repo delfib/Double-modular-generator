@@ -7,6 +7,7 @@ VAR
     tail               : 0..3;
     last_client_toggle : boolean;
     last_server_toggle : array 0..1 of boolean;
+    next_server_turn   : 0..1;  -- tracks whose turn to consume
 
 ASSIGN
     init(head) := 0;
@@ -14,6 +15,7 @@ ASSIGN
     init(last_client_toggle) := FALSE;
     init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
+    init(next_server_turn) := {0,1};
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;
@@ -41,12 +43,16 @@ ASSIGN
         TRUE : last_server_toggle[1];
     esac;
 
+    next(next_server_turn) := case
+        (server_toggles[0] != last_server_toggle[0]) : 1;  
+        (server_toggles[1] != last_server_toggle[1]) : 0;  
+        TRUE : next_server_turn;
+    esac;
+
 DEFINE
     full  := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
-FAIRNESS
-    running
 
 -- =========================================================
 -- Client module
@@ -75,8 +81,6 @@ ASSIGN
         TRUE : request_toggle;                                                      
     esac;
 
-FAIRNESS
-    running
 
 
 -- =========================================================
@@ -92,19 +96,16 @@ ASSIGN
 
     next(server_state) := case
         server_state = receiving & queue.empty : receiving;
-        server_state = receiving & !queue.empty : received;
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id : received;
         server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id] : receiving;
         server_state = received & queue.empty : received;
         TRUE : server_state;
     esac;
 
     next(request_toggle) := case
-        server_state = receiving & !queue.empty : !request_toggle;
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id : !request_toggle;
         TRUE : request_toggle;
     esac;
-
-FAIRNESS
-    running
 
 
 
@@ -117,13 +118,11 @@ DEFINE
 VAR
     server_toggles : array 0..1 of boolean;
 
-    client  : process Client(queue);
-    server1 : process ServerExtended(queue, 0);
-    server2 : process ServerExtended(queue, 1);
+    client  : Client(queue);
+    server1 : ServerExtended(queue, 0);
+    server2 : ServerExtended(queue, 1);
 
-    queue   : process QueueExtended(Q_SIZE,
-                                    client.request_toggle,
-                                    server_toggles);
+    queue   : QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
 
 ASSIGN
     server_toggles[0] := server1.request_toggle;
@@ -251,6 +250,56 @@ SPEC AG (
       & AX (extended.server2.request_toggle = extended.queue.last_server_toggle[1])
     )
     -> q
+)
+
+
+SPEC AG (
+    (extended.server1.server_state = receiving &
+     !extended.queue.empty &
+     extended.queue.next_server_turn = 0)
+    ->
+    AX (extended.server1.server_state = received)
+)
+
+
+SPEC AG (
+    (extended.server2.server_state = receiving &
+     !extended.queue.empty &
+     extended.queue.next_server_turn = 1)
+    ->
+    AX (extended.server2.server_state = received)
+)
+
+SPEC AG (
+    extended.queue.next_server_turn = 1
+    ->
+    AX !(extended.server1.server_state = received &
+         extended.server1.request_toggle != extended.queue.last_server_toggle[0])
+)
+
+SPEC AG (
+    extended.queue.next_server_turn = 0
+    ->
+    AX !(extended.server2.server_state = received &
+         extended.server2.request_toggle != extended.queue.last_server_toggle[1])
+)
+
+
+SPEC AG !(
+    (extended.server1.request_toggle != extended.queue.last_server_toggle[0]) &
+    (extended.server2.request_toggle != extended.queue.last_server_toggle[1])
+)
+
+SPEC AG (
+    (!extended.queue.empty & extended.queue.next_server_turn = 0)
+    ->
+    AF (extended.server1.server_state = received)
+)
+
+SPEC AG (
+    (!extended.queue.empty & extended.queue.next_server_turn = 1)
+    ->
+    AF (extended.server2.server_state = received)
 )
 
 -- NuSMV  UNRC/tesis/double-modular-generator/RPC_protocol/R_Protocol/R_ProtocolExtended.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

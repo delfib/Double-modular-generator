@@ -421,7 +421,7 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     for i in range(1, n + 1):
         if target_module.lower() == 'client':
             instance_lines.append(
-                f"{indent}client{i} : process ClientExtended({params}, server.request_source, {i-1});"
+                f"{indent}client{i} : process ClientExtended({params}, {i-1}, server.request_source);"
             )
         else:
             instance_lines.append(

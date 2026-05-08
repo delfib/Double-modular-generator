@@ -448,9 +448,9 @@ VAR
 
     ack_cons_toggles     : array 0..1 of boolean;
 
-    client1 : process ClientExtended(request_queue, ack_queue, server.request_source, 0);
+    client1 : process ClientExtended(request_queue, ack_queue, 0, server.request_source);
 
-    client2 : process ClientExtended(request_queue, ack_queue, server.request_source, 1);
+    client2 : process ClientExtended(request_queue, ack_queue, 1, server.request_source);
     server : process ServerExtended(request_queue, ack_queue);
     request_queue : process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);

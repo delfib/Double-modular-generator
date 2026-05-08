@@ -38,8 +38,6 @@ DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
-FAIRNESS
-    running
 
 
 -- =========================================================
@@ -69,9 +67,6 @@ ASSIGN
         TRUE : request_toggle;                                                      -- keep same value otherwise
     esac;
 
-FAIRNESS
-    running
-
 
 -- =========================================================
 -- Server module
@@ -98,9 +93,6 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-FAIRNESS
-    running
-
 
 -- =========================================================
 -- Nominal wrapper
@@ -109,9 +101,9 @@ MODULE NominalR()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : process Client(queue);
-    server : process Server(queue);
-    queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    client : Client(queue);
+    server : Server(queue);
+    queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
 -- =========================================================
