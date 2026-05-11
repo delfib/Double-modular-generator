@@ -58,7 +58,7 @@ ASSIGN
         case
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
@@ -135,7 +135,7 @@ ASSIGN
     init(last_client_toggle[1]) := FALSE;
     init(last_client_toggle[2]) := FALSE;
     init(last_server_toggle) := FALSE;
-    init(next_client_turn) := {0,1,2};
+    init(next_client_turn) := 0;
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -169,7 +169,12 @@ ASSIGN
         TRUE : last_server_toggle;
     esac;
 
-    next(next_client_turn) := {0,1,2};
+    next(next_client_turn) := case
+        next_client_turn = 0 : 1;
+        next_client_turn = 1 : 2;
+        next_client_turn = 2 : 0;
+        TRUE : next_client_turn;
+    esac;
 
 DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
@@ -178,7 +183,7 @@ DEFINE
 
 
 
-MODULE ClientExtended(queue, client_id)
+MODULE ClientExtended(queue, client_id, client_states)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
     client_state : {sending, sent};
@@ -204,7 +209,8 @@ ASSIGN
         fault_mode = stuck_sent : sent;
 
             client_state = sending & queue.full : sending;
-            client_state = sending & !queue.full & queue.next_client_turn = client_id : sent;
+            client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : sent;
             client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
@@ -213,13 +219,15 @@ ASSIGN
     
     next(request_toggle) := case
         fault_mode = none &
-        client_state = sending & !queue.full & queue.next_client_turn = client_id : !request_toggle;                     -- toggle!
-        TRUE : request_toggle;                                                      -- keep same value otherwise
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : !request_toggle;                     
+        TRUE : request_toggle;                                                
     esac;
 
     next(requests_sent) := case
         fault_mode = none &
-        client_state = sending & !queue.full & queue.next_client_turn = client_id & requests_sent < 100 : requests_sent + 1;                   
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & requests_sent < 100 : requests_sent + 1;                   
         TRUE : requests_sent;                                                    
     esac;
 
@@ -234,12 +242,13 @@ DEFINE
     Q_SIZE := 4;
 VAR
     client_toggles : array 0..2 of boolean;
+    client_states : array 0..2 of {sending, sent};
 
-    client1 : ClientExtended(queue, 0);
+    client1 : ClientExtended(queue, 0, client_states);
 
-    client2 : ClientExtended(queue, 1);
+    client2 : ClientExtended(queue, 1, client_states);
 
-    client3 : ClientExtended(queue, 2);
+    client3 : ClientExtended(queue, 2, client_states);
     server : Server(queue);
     queue : QueueExtended(Q_SIZE, client_toggles, server.request_toggle);
 
@@ -247,6 +256,10 @@ ASSIGN
     client_toggles[0] := client1.request_toggle;
     client_toggles[1] := client2.request_toggle;
     client_toggles[2] := client3.request_toggle;
+
+    client_states[0] := client1.client_state;
+    client_states[1] := client2.client_state;
+    client_states[2] := client3.client_state;
 
 
 -- =========================================================
@@ -273,5 +286,3 @@ LTLSPEC G (
 MODULE main
 VAR
     sync : Sync();
-
-

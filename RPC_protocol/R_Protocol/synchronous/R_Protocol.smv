@@ -58,7 +58,7 @@ ASSIGN
         case
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
@@ -245,4 +245,4 @@ SPEC EF nominal.queue.empty
 -- It's possible to reach a non-empty and non-full queue
 SPEC EF (!nominal.queue.empty & !nominal.queue.full)
 
--- NuSMV  UNRC/tesis/double-modular-generator/new/R_Protocol/R_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt
+-- NuSMV  UNRC/tesis/double-modular-generator/RPC_Protocol/R_Protocol/synchronous/R_Protocol.smv > UNRC/tesis/double-modular-generator/BORRAR.txt

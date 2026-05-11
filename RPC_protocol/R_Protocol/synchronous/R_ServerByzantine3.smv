@@ -60,7 +60,7 @@ ASSIGN
         case
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
@@ -135,7 +135,7 @@ ASSIGN
         init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
     init(last_server_toggle[2]) := FALSE;
-    init(next_server_turn) := {0,1,2};
+    init(next_server_turn) := 0;
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
@@ -170,9 +170,9 @@ ASSIGN
     esac;
 
     next(next_server_turn) := case
-        (server_toggles[0] != last_server_toggle[0]) : 1;  
-        (server_toggles[1] != last_server_toggle[1]) : 2;  
-        (server_toggles[2] != last_server_toggle[2]) : 0; 
+        next_server_turn = 0 : 1;
+        next_server_turn = 1 : 2;
+        next_server_turn = 2 : 0;
         TRUE : next_server_turn;
     esac;
 
