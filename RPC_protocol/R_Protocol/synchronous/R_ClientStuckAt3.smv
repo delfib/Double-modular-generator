@@ -135,7 +135,7 @@ ASSIGN
     init(last_client_toggle[1]) := FALSE;
     init(last_client_toggle[2]) := FALSE;
     init(last_server_toggle) := FALSE;
-    init(next_client_turn) := 0;
+    init(next_client_turn) := {0,1,2};
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;

@@ -43,9 +43,9 @@ ASSIGN
         TRUE : last_server_toggle[1];
     esac;
 
-    next(next_server_turn) := case
-        (server_toggles[0] != last_server_toggle[0]) : 1;  
-        (server_toggles[1] != last_server_toggle[1]) : 0;  
+      next(next_server_turn) := case
+        next_server_turn = 0 : 1;
+        next_server_turn = 1 : 0;
         TRUE : next_server_turn;
     esac;
 

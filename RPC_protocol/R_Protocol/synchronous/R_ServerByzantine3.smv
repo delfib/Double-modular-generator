@@ -135,7 +135,7 @@ ASSIGN
         init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
     init(last_server_toggle[2]) := FALSE;
-    init(next_server_turn) := 0;
+    init(next_server_turn) := {0,1,2};
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
