@@ -47,12 +47,12 @@ MODULE Client(queue)
 VAR
     client_state : {sending, sent};
     request_toggle : boolean;  
-    requests_sent : 0..100;         
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(client_state) := sending;
     init(request_toggle) := FALSE;
-    init(requests_sent) := 0;
+    init(num_requests_sent) := 0;
 
     next(client_state) :=
         case
@@ -68,9 +68,9 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-    next(requests_sent) := case
-        client_state = sending & !queue.full & requests_sent < 100 : requests_sent + 1;                   
-        TRUE : requests_sent;                                                    
+    next(num_requests_sent) := case
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 
@@ -81,17 +81,17 @@ MODULE Server(queue)
 VAR
     server_state : {receiving, received};
     request_toggle : boolean;  
-    requests_received : 0..100;
+    num_requests_received : 0..100;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(requests_received) := 0;
+    init(num_requests_received) := 0;
 
     next(server_state) :=
         case
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle: receiving;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
@@ -101,9 +101,9 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-    next(requests_received) := case
-        server_state = receiving & !queue.empty & requests_received < 100 : requests_received + 1;                   
-        TRUE : requests_received;                                                    
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
     esac;
 
 
@@ -188,14 +188,14 @@ VAR
     fault_mode : {none, byzantine_client_state};
     client_state : {sending, sent};
     request_toggle : boolean;    
-    requests_sent : 0..100;       
+    num_requests_sent : 0..100;       
 
 ASSIGN
     init(fault_mode) := none;
 
     init(client_state) := sending;
     init(request_toggle) := FALSE;
-    init(requests_sent) := 0;
+    init(num_requests_sent) := 0;
 
     next(fault_mode) :=
         case
@@ -223,11 +223,11 @@ ASSIGN
         TRUE : request_toggle;                                                
     esac;
 
-    next(requests_sent) := case
+    next(num_requests_sent) := case
         fault_mode = none &
         client_state = sending & !queue.full & queue.next_client_turn = client_id &
-                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & requests_sent < 100 : requests_sent + 1;                   
-        TRUE : requests_sent;                                                    
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 
@@ -272,10 +272,10 @@ VAR
 -- Whenever nominal server consumes, eventually an extended server consumes
 
 LTLSPEC G (
-    nominal.client.requests_sent =
-    extended.client1.requests_sent +
-    extended.client2.requests_sent + 
-    extended.client3.requests_sent 
+    nominal.client.num_requests_sent =
+    extended.client1.num_requests_sent +
+    extended.client2.num_requests_sent + 
+    extended.client3.num_requests_sent 
 )
 
 

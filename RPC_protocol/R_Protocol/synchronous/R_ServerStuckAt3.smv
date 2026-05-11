@@ -49,12 +49,12 @@ MODULE Client(queue)
 VAR
     client_state : {sending, sent};
     request_toggle : boolean;  
-    requests_sent : 0..100;         
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(client_state) := sending;
     init(request_toggle) := FALSE;
-    init(requests_sent) := 0;
+    init(num_requests_sent) := 0;
 
     next(client_state) :=
         case
@@ -70,9 +70,9 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-     next(requests_sent) := case
-        client_state = sending & !queue.full & requests_sent < 100 : requests_sent + 1;                   
-        TRUE : requests_sent;                                                    
+     next(num_requests_sent) := case
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 
@@ -83,17 +83,17 @@ MODULE Server(queue)
 VAR
     server_state : {receiving, received};
     request_toggle : boolean;  
-    request_received : 0..100;
+    num_requests_received : 0..100;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(request_received) := 0;
+    init(num_requests_received) := 0;
 
     next(server_state) :=
         case
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle: receiving;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
@@ -103,9 +103,9 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-    next(request_received) := case
-        server_state = receiving & !queue.empty & request_received < 100 : request_received + 1;                   
-        TRUE : request_received;                                                    
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
     esac;
 
 
@@ -187,13 +187,13 @@ VAR
     fault_mode : {none, stuck_receiving, stuck_received};
     server_state : {receiving, received};
     request_toggle : boolean;  
-    request_received : 0..100;
+    num_requests_received : 0..100;
 ASSIGN
     init(fault_mode) := none;
 
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(request_received) := 0;
+    init(num_requests_received) := 0;
 
     next(fault_mode) :=
         case
@@ -208,7 +208,7 @@ ASSIGN
 
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty & queue.next_server_turn = server_id : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id]: receiving;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
@@ -219,9 +219,9 @@ ASSIGN
     
     esac;
 
-    next(request_received) := case
-        server_state = receiving & !queue.empty & queue.next_server_turn = server_id & request_received < 100 : request_received + 1;
-        TRUE : request_received;                                                    
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
+        TRUE : num_requests_received;                                                    
     esac;
 
 
@@ -261,10 +261,10 @@ VAR
 
 
 LTLSPEC G (
-    nominal.server.request_received =
-    extended.server1.request_received +
-    extended.server2.request_received + 
-    extended.server3.request_received
+    nominal.server.num_requests_received =
+    extended.server1.num_requests_received +
+    extended.server2.num_requests_received + 
+    extended.server3.num_requests_received
 )
 
 
