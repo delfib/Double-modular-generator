@@ -258,7 +258,6 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
--- Whenever nominal server consumes, eventually an extended server consumes
 
 LTLSPEC G (
     nominal.client.num_requests_sent =

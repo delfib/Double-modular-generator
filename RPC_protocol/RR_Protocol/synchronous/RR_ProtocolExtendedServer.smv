@@ -186,12 +186,6 @@ ASSIGN
 
 -- =========================================================
 -- System wrapper
---
--- producer_toggles[0] = client.request_toggle  (active)
--- producer_toggles[1] = FALSE                  (dummy, never toggles)
---
--- consumer_toggles[0] = client.ack_toggle       (active)
--- consumer_toggles[1] = FALSE                   (dummy, never toggles)
 -- =========================================================
 MODULE ExtendedRR()
 DEFINE
@@ -348,8 +342,8 @@ SPEC AG (extended.server1.server_ack_state = sent -> AF extended.client.client_a
 SPEC AG (extended.server1.num_requests_received <= extended.client.num_requests_sent)
 
 -- Every request sent is eventually received
-SPEC AG (extended.client.num_requests_sent > extended.server1.num_requests_received ->
-    AF (extended.server1.num_requests_received = extended.client.num_requests_sent))
+SPEC AG (extended.client.num_requests_sent > extended.server1.num_requests_received + extended.server2.num_requests_received ->
+    AF (extended.server1.num_requests_received + extended.server2.num_requests_received = extended.client.num_requests_sent))
 
 
 -- TOGGLE SYNCHRONIZATION
