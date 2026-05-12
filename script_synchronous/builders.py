@@ -41,6 +41,7 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
         )
         array_side   = 'server'
         array_param  = 'server_toggles'
+        turn_var     = 'next_server_turn'
     else:
         # Rename module + replace the client_toggle param with an array param
         text = _replace_module_name(text, 'Queue', 'QueueExtended')
@@ -51,9 +52,19 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
         )
         array_side   = 'client'
         array_param  = 'client_toggles'
+        turn_var     = 'next_client_turn'
 
     n = redundancy
     array_bound = _array_bound(n)
+
+    # Add next_client_turn / next_server_turn to VAR section
+    turn_range = f'0..{n - 1}'
+
+    text = text.replace(
+        'ASSIGN',
+        f'    {turn_var} : {turn_range};\n\nASSIGN',
+        1
+    )
 
     # Replace last_<side>_toggle boolean VAR with an array
     text = re.sub(
@@ -79,6 +90,16 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
         f'        ({array_param}[{i}] != last_{array_side}_toggle[{i}]) : ({pointer} + 1) mod Q_SIZE;'
         for i in range(n)
     )
+
+    # Add init(next_client_turn) / init(next_server_turn)
+    init_set = '{' + ','.join(str(i) for i in range(n)) + '}'
+
+    text = re.sub(
+        r'(init\(last_' + array_side + r'_toggle\[' + str(n - 1) + r'\]\)\s*:=\s*FALSE;)',
+        r'\1' + f'\n    init({turn_var}) := {init_set};',
+        text
+    )
+
     text = re.sub(
         rf'next\({pointer}\)\s*:=\s*case.*?esac;',
         f'next({pointer}) := case\n{pointer_cases}\n        TRUE : {pointer};\n    esac;',
@@ -94,11 +115,31 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
         f'    esac;'
         for i in range(n)
     )
+
     text = re.sub(
         rf'next\(last_{array_side}_toggle\)\s*:=\s*case.*?esac;',
         next_slots,
         text,
         flags=re.DOTALL
+    )
+
+    # Add next(next_client_turn) / next(next_server_turn)
+    turn_cases = '\n'.join(
+        f'        {turn_var} = {i} : {(i + 1) % n};'
+        for i in range(n)
+    )
+
+    turn_next_block = (
+        f'    next({turn_var}) := case\n'
+        f'{turn_cases}\n'
+        f'        TRUE : {turn_var};\n'
+        f'    esac;\n\n'
+    )
+
+    text = re.sub(
+        r'(DEFINE)',
+        turn_next_block + r'\1',
+        text
     )
 
     return text
@@ -289,8 +330,8 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
     if redundancy == 1:
         # Replace ONLY the target instance with Extended version
         text = re.sub(
-            rf'process\s+{target_module}\(',
-            f'process {target_module}Extended(',
+            rf'\s+{target_module}\(',
+            f'{target_module}Extended(',
             text
         )
 
@@ -311,7 +352,7 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
     instance_lines = []
     for i in range(1, n + 1):
         instance_lines.append(
-            f"{indent}{target_module.lower()}{i} : process {target_module}Extended({params}, {i-1});"
+            f"{indent}{target_module.lower()}{i} : {target_module}Extended({params}, {i-1});"
         )
 
     # Determine which queue side is widened and build toggle arrays accordingly
@@ -348,7 +389,7 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
         q_param_list[1]  = queue_param   # replace client_toggle with client_toggles
 
     new_queue_line = (
-        f"{q_indent}queue : process QueueExtended("
+        f"{q_indent}queue : QueueExtended("
         + ', '.join(q_param_list)
         + ");"
     )

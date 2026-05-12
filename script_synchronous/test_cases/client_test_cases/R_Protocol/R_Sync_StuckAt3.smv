@@ -47,18 +47,18 @@ MODULE Client(queue)
 VAR
     client_state : {sending, sent};
     request_toggle : boolean;  
-    requests_sent : 0..100;         
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(client_state) := sending;
     init(request_toggle) := FALSE;
-    init(requests_sent) := 0;
+    init(num_requests_sent) := 0;
 
     next(client_state) :=
         case
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
@@ -68,9 +68,9 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-    next(requests_sent) := case
-        client_state = sending & !queue.full & requests_sent < 100 : requests_sent + 1;                   
-        TRUE : requests_sent;                                                    
+    next(num_requests_sent) := case
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 
@@ -81,17 +81,17 @@ MODULE Server(queue)
 VAR
     server_state : {receiving, received};
     request_toggle : boolean;  
-    requests_received : 0..100;
+    num_requests_received : 0..100;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
-    init(requests_received) := 0;
+    init(num_requests_received) := 0;
 
     next(server_state) :=
         case
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle: receiving;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
@@ -101,16 +101,16 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-    next(requests_received) := case
-        server_state = receiving & !queue.empty & requests_received < 100 : requests_received + 1;                   
-        TRUE : requests_received;                                                    
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
     esac;
 
 
 -- =========================================================
 -- Nominal wrapper
 -- =========================================================
-MODULE NominalR()
+MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
@@ -119,13 +119,16 @@ VAR
     queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
-
+-- =========================================================
+-- Queue Extended
+-- =========================================================
 MODULE QueueExtended(Q_SIZE, client_toggles, server_toggle)
 VAR
     head : 0..3;
     tail : 0..3;
     last_client_toggle : array 0..2 of boolean;  -- last toggle value we saw
     last_server_toggle : boolean;
+    next_client_turn : 0..2;
 
 ASSIGN
     init(head) := 0;
@@ -134,6 +137,7 @@ ASSIGN
     init(last_client_toggle[1]) := FALSE;
     init(last_client_toggle[2]) := FALSE;
     init(last_server_toggle) := FALSE;
+    init(next_client_turn) := {0,1,2};
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -167,26 +171,35 @@ ASSIGN
         TRUE : last_server_toggle;
     esac;
 
+    next(next_client_turn) := case
+        next_client_turn = 0 : 1;
+        next_client_turn = 1 : 2;
+        next_client_turn = 2 : 0;
+        TRUE : next_client_turn;
+    esac;
+
 DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 
 
-
-MODULE ClientExtended(queue, client_id)
+-- =========================================================
+-- Client Extended
+-- =========================================================
+MODULE ClientExtended(queue, client_id, client_states)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
     client_state : {sending, sent};
     request_toggle : boolean;    
-    requests_sent : 0..100;       
+    num_requests_sent : 0..100;       
 
 ASSIGN
     init(fault_mode) := none;
 
     init(client_state) := sending;
     init(request_toggle) := FALSE;
-    init(requests_sent) := 0;
+    init(num_requests_sent) := 0;
 
     next(fault_mode) :=
         case
@@ -200,28 +213,31 @@ ASSIGN
         fault_mode = stuck_sent : sent;
 
             client_state = sending & queue.full : sending;
-            client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle[client_id] : sending;
+            client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : sent;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
  
-    -- Toggle the bit each time we make a new request
+    
     next(request_toggle) := case
         fault_mode = none &
-        client_state = sending & !queue.full : !request_toggle;                     -- toggle!
-        TRUE : request_toggle;                                                      -- keep same value otherwise
-    
-    next(requests_sent) := case
-        client_state = sending & !queue.full & requests_sent < 100 : requests_sent + 1;                   
-        TRUE : requests_sent;                                                    
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : !request_toggle;                     
+        TRUE : request_toggle;                                                
     esac;
 
+    next(num_requests_sent) := case
+        fault_mode = none &
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 
 -- =========================================================
--- Server module
+-- Extended Module
 -- =========================================================
 
 
@@ -230,12 +246,13 @@ DEFINE
     Q_SIZE := 4;
 VAR
     client_toggles : array 0..2 of boolean;
+    client_states : array 0..2 of {sending, sent};
 
-    client1 : ClientExtended(queue, 0);
+    client1 : ClientExtended(queue, 0, client_states);
 
-    client2 : ClientExtended(queue, 1);
+    client2 : ClientExtended(queue, 1, client_states);
 
-    client3 : ClientExtended(queue, 2);
+    client3 : ClientExtended(queue, 2, client_states);
     server : Server(queue);
     queue : QueueExtended(Q_SIZE, client_toggles, server.request_toggle);
 
@@ -243,6 +260,10 @@ ASSIGN
     client_toggles[0] := client1.request_toggle;
     client_toggles[1] := client2.request_toggle;
     client_toggles[2] := client3.request_toggle;
+
+    client_states[0] := client1.client_state;
+    client_states[1] := client2.client_state;
+    client_states[2] := client3.client_state;
 
 
 -- =========================================================
@@ -253,12 +274,12 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
--- Whenever nominal server consumes, eventually an extended server consumes
 
 LTLSPEC G (
-    nominal.server.request_received =
-    extended.server1.request_received +
-    extended.server2.request_received
+    nominal.client.num_requests_sent =
+    extended.client1.num_requests_sent +
+    extended.client2.num_requests_sent + 
+    extended.client3.num_requests_sent 
 )
 
 
