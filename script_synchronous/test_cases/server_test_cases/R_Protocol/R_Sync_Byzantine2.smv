@@ -35,12 +35,11 @@ ASSIGN
         TRUE : last_server_toggle;
     esac;
 
+
 DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
-FAIRNESS
-    running
 
 
 -- =========================================================
@@ -49,29 +48,32 @@ FAIRNESS
 MODULE Client(queue)
 VAR
     client_state : {sending, sent};
-    request_toggle : boolean;           
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(client_state) := sending;
     init(request_toggle) := FALSE;
+    init(num_requests_sent) := 0;
 
     next(client_state) :=
         case
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full : sent;
-            client_state = sent & !queue.full & request_toggle = queue.last_client_toggle : sending;
+            client_state = sent & !queue.full : sending;
             client_state = sent & queue.full : sent;
             TRUE : client_state;
         esac;
  
-    -- Toggle the bit each time we make a new request
     next(request_toggle) := case
-        client_state = sending & !queue.full : !request_toggle;                     -- toggle!
-        TRUE : request_toggle;                                                      -- keep same value otherwise
+        client_state = sending & !queue.full : !request_toggle;                   
+        TRUE : request_toggle;                                                    
     esac;
 
-FAIRNESS
-    running
+     next(num_requests_sent) := case
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
+    esac;
 
 
 -- =========================================================
@@ -81,15 +83,17 @@ MODULE Server(queue)
 VAR
     server_state : {receiving, received};
     request_toggle : boolean;  
+    num_requests_received : 0..100;
 ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
+    init(num_requests_received) := 0;
 
     next(server_state) :=
         case
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle: receiving;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
@@ -99,8 +103,10 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-FAIRNESS
-    running
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
+    esac;
 
 
 -- =========================================================
@@ -110,17 +116,21 @@ MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : process Client(queue);
-    server : process Server(queue);
-    queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    client : Client(queue);
+    server : Server(queue);
+    queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
+-- =========================================================
+-- Queue Extended
+-- =========================================================
 MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles)
 VAR
     head : 0..3;
     tail : 0..3;
     last_client_toggle : boolean;  -- last toggle value we saw
     last_server_toggle : array 0..1 of boolean;
+    next_server_turn   : 0..1;  
 
 ASSIGN
     init(head) := 0;
@@ -128,6 +138,7 @@ ASSIGN
     init(last_client_toggle) := FALSE;
         init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
+    init(next_server_turn) := {0,1};
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
@@ -155,24 +166,33 @@ ASSIGN
         TRUE : last_server_toggle[1];
     esac;
 
+    next(next_server_turn) := case
+        next_server_turn = 0 : 1;
+        next_server_turn = 1 : 0;
+        TRUE : next_server_turn;
+    esac;
+
 DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
-FAIRNESS
-    running
 
 
+-- =========================================================
+-- Server Extended
+-- =========================================================
 MODULE ServerExtended(queue, server_id)
 VAR
     fault_mode : {none, byzantine_server_state};
     server_state : {receiving, received};
     request_toggle : boolean;  
+    num_requests_received : 0..100;
 ASSIGN
     init(fault_mode) := none;
 
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
+    init(num_requests_received) := 0;
 
     next(fault_mode) :=
         case
@@ -185,25 +205,28 @@ ASSIGN
         fault_mode = byzantine_server_state : {receiving, received};
 
             server_state = receiving & queue.empty : receiving;
-            server_state = receiving & !queue.empty : received;
-            server_state = received & !queue.empty & request_toggle = queue.last_server_toggle[server_id]: receiving;
+            server_state = receiving & !queue.empty & queue.next_server_turn = server_id : received;
+            server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
         esac;
 
     next(request_toggle) := case
         fault_mode = none &
-        server_state = receiving & !queue.empty : !request_toggle;
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id : !request_toggle;
         TRUE : request_toggle;                                                    
     
     esac;
 
-FAIRNESS
-    running
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
+        TRUE : num_requests_received;                                                    
+    esac;
+
 
 
 -- =========================================================
--- Nominal wrapper
+-- Extended wrapper
 -- =========================================================
 
 
@@ -211,18 +234,17 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : process Client(queue);
+    client : Client(queue);
     server_toggles : array 0..1 of boolean;
 
-    server1 : process ServerExtended(queue, 0);
+    server1 : ServerExtended(queue, 0);
 
-    server2 : process ServerExtended(queue, 1);
-    queue : process QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
+    server2 : ServerExtended(queue, 1);
+    queue : QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
 
 ASSIGN
     server_toggles[0] := server1.request_toggle;
     server_toggles[1] := server2.request_toggle;
-
 
 -- =========================================================
 --  Synchronization Module
@@ -232,8 +254,11 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
--- Whenever nominal server consumes, eventually an extended server consumes
-SPEC AG (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
+LTLSPEC G (
+    nominal.server.num_requests_received =
+    extended.server1.num_requests_received +
+    extended.server2.num_requests_received 
+)
 
 
 -- =========================================================
