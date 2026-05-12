@@ -119,7 +119,7 @@ MODULE QueueExtended(Q_SIZE, client_toggles, server_toggle)
 VAR
     head : 0..3;
     tail : 0..3;
-    last_client_toggle : array 0..2 of boolean;  -- last toggle value we saw
+    last_client_toggle : array 0..1 of boolean;  -- last toggle value we saw
     last_server_toggle : boolean;
 
 ASSIGN
@@ -127,13 +127,11 @@ ASSIGN
     init(tail) := 0;
         init(last_client_toggle[0]) := FALSE;
     init(last_client_toggle[1]) := FALSE;
-    init(last_client_toggle[2]) := FALSE;
     init(last_server_toggle) := FALSE;
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
         (client_toggles[1] != last_client_toggle[1]) : (tail + 1) mod Q_SIZE;
-        (client_toggles[2] != last_client_toggle[2]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
 
@@ -150,11 +148,6 @@ ASSIGN
     next(last_client_toggle[1]) := case
         (client_toggles[1] != last_client_toggle[1]) : client_toggles[1];
         TRUE : last_client_toggle[1];
-    esac;
-
-    next(last_client_toggle[2]) := case
-        (client_toggles[2] != last_client_toggle[2]) : client_toggles[2];
-        TRUE : last_client_toggle[2];
     esac;
 
     next(last_server_toggle) := case
@@ -220,20 +213,17 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client_toggles : array 0..2 of boolean;
+    client_toggles : array 0..1 of boolean;
 
     client1 : process ClientExtended(queue, 0);
 
     client2 : process ClientExtended(queue, 1);
-
-    client3 : process ClientExtended(queue, 2);
     server : process Server(queue);
     queue : process QueueExtended(Q_SIZE, client_toggles, server.request_toggle);
 
 ASSIGN
     client_toggles[0] := client1.request_toggle;
     client_toggles[1] := client2.request_toggle;
-    client_toggles[2] := client3.request_toggle;
 
 
 -- =========================================================
@@ -245,7 +235,7 @@ VAR
     extended : Extended();
 
 -- Whenever nominal server consumes, eventually an extended server consumes
-SPEC AG (nominal.client.client_state = sent -> AF (extended.client1.client_state = sent | extended.client2.client_state = sent | extended.client3.client_state = sent))
+SPEC AG (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
 
 
 -- =========================================================

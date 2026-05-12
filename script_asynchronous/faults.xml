@@ -1,30 +1,44 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <fault-injection>
 
-    <model>RR_Protocol.smv</model>
+    <model>R_Protocol.smv</model>
 
-    <protocol-type>RR</protocol-type>
+    <protocol-type>R</protocol-type>
 
     <target-module>Server</target-module>
 
-    <redundancy count="2"/>
+    <redundancy count="8"/>
 
     <faults>
         <fault id="stuck_receiving">
             <type>stuck-at</type>
-            <variable>server_request_state</variable>
+            <variable>server_state</variable>
             <value>receiving</value>
         </fault>
 
         <fault id="stuck_received">
             <type>stuck-at</type>
-            <variable>server_request_state</variable>
+            <variable>server_state</variable>
             <value>received</value>
         </fault>
         <!--
+
+        -->
+        <!--
+        <fault id="stuck_sending">
+            <type>stuck-at</type>
+            <variable>client_request_state</variable>
+            <value>sending</value>
+        </fault>
+
+        <fault id="stuck_sent">
+            <type>stuck-at</type>
+            <variable>client_request_state</variable>
+            <value>sent</value>
+        </fault>
         <fault id="byzantine_state">
             <type>byzantine</type>
-            <variable>server_state</variable>
+            <variable>client_request_state</variable>
         </fault>
         -->
     </faults>
@@ -35,6 +49,13 @@
             <spec>
                 (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
             </spec>
+            <!--
+            -->
+            <!--
+            <spec>
+                (nominal.server.server_request_state = received -> AF (extended.server1.server_request_state = received | extended.server2.server_request_state = received))
+            </spec>
+            -->
         </property>
     </properties>
 

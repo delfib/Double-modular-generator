@@ -120,7 +120,7 @@ VAR
     head : 0..3;
     tail : 0..3;
     last_client_toggle : boolean;  -- last toggle value we saw
-    last_server_toggle : array 0..2 of boolean;
+    last_server_toggle : array 0..1 of boolean;
 
 ASSIGN
     init(head) := 0;
@@ -128,7 +128,6 @@ ASSIGN
     init(last_client_toggle) := FALSE;
         init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
-    init(last_server_toggle[2]) := FALSE;
 
     next(tail) := case
         (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
@@ -138,7 +137,6 @@ ASSIGN
     next(head) := case
         (server_toggles[0] != last_server_toggle[0]) : (head + 1) mod Q_SIZE;
         (server_toggles[1] != last_server_toggle[1]) : (head + 1) mod Q_SIZE;
-        (server_toggles[2] != last_server_toggle[2]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
@@ -155,11 +153,6 @@ ASSIGN
     next(last_server_toggle[1]) := case
         (server_toggles[1] != last_server_toggle[1]) : server_toggles[1];
         TRUE : last_server_toggle[1];
-    esac;
-
-    next(last_server_toggle[2]) := case
-        (server_toggles[2] != last_server_toggle[2]) : server_toggles[2];
-        TRUE : last_server_toggle[2];
     esac;
 
 DEFINE
@@ -219,19 +212,16 @@ DEFINE
     Q_SIZE := 4;
 VAR
     client : process Client(queue);
-    server_toggles : array 0..2 of boolean;
+    server_toggles : array 0..1 of boolean;
 
     server1 : process ServerExtended(queue, 0);
 
     server2 : process ServerExtended(queue, 1);
-
-    server3 : process ServerExtended(queue, 2);
     queue : process QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
 
 ASSIGN
     server_toggles[0] := server1.request_toggle;
     server_toggles[1] := server2.request_toggle;
-    server_toggles[2] := server3.request_toggle;
 
 
 -- =========================================================

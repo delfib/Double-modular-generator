@@ -167,9 +167,6 @@ VAR
     ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
 
 
--- =========================================================
--- Extended Queue
--- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
     head : 0..3;
@@ -226,9 +223,6 @@ FAIRNESS
     running
 
 
--- =========================================================
--- Extended Client
--- =========================================================
 MODULE ClientExtended(request_queue, ack_queue)
 VAR
     client_request_state : {sending, sent};
@@ -283,8 +277,10 @@ FAIRNESS
 
 
 -- =========================================================
--- Extended Server
+-- Server module
 -- =========================================================
+
+
 MODULE ServerExtended(request_queue, ack_queue, server_id)
 VAR
     fault_mode : {none, stuck_receiving, stuck_received};
@@ -398,7 +394,7 @@ VAR
     extended : Extended();
 
 -- Whenever nominal server consumes, eventually an extended server consumes
-SPEC AG (nominal.server.server_request_state = received -> AF (extended.server1.server_request_state = received | extended.server2.server_request_state = received))
+SPEC AG (nominal.server.server_state = received -> AF (extended.server1.server_state = received | extended.server2.server_state = received))
 
 
 -- =========================================================
