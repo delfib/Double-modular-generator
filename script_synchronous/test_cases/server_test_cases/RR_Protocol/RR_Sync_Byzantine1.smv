@@ -38,8 +38,6 @@ DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
-FAIRNESS
-    running
 
 
 -- =========================================================
@@ -52,6 +50,7 @@ VAR
     request_toggle : boolean;  
     ack_toggle : boolean;    
     ack_received : boolean;
+    num_requests_sent : 0..100;    
 
 ASSIGN
     init(client_request_state) := sending;
@@ -59,12 +58,13 @@ ASSIGN
     init(request_toggle) := FALSE;
     init(ack_toggle) := FALSE;
     init(ack_received) := TRUE;
+    init(num_requests_sent) := 0;
 
     next(client_request_state) :=
         case
             client_request_state = sending & request_queue.full : sending;
             client_request_state = sending & !request_queue.full & ack_received : sent;
-            client_request_state = sent & !request_queue.full & request_toggle = request_queue.last_producer_toggle : sending;
+            client_request_state = sent & !request_queue.full : sending;
             client_request_state = sent & request_queue.full : sent;
             TRUE : client_request_state;
         esac;
@@ -73,7 +73,7 @@ ASSIGN
         case
             client_ack_state = receiving & ack_queue.empty : receiving;
             client_ack_state = receiving & !ack_queue.empty : received;
-            client_ack_state = received & !ack_queue.empty & ack_toggle = ack_queue.last_consumer_toggle : receiving;
+            client_ack_state = received & !ack_queue.empty : receiving;
             client_ack_state = received & ack_queue.empty : received;
             TRUE : client_ack_state;
         esac;
@@ -94,8 +94,11 @@ ASSIGN
         TRUE : ack_received;           
     esac;
 
-FAIRNESS
-    running
+    next(num_requests_sent) := case
+        client_request_state = sending & !request_queue.full & ack_received & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
+    esac;
+
 
 
 -- =========================================================
@@ -108,6 +111,7 @@ VAR
     request_toggle : boolean;  
     ack_toggle : boolean;
     request_received : boolean;
+    num_requests_received : 0..100;
 
 ASSIGN
     init(server_request_state) := receiving;
@@ -115,21 +119,22 @@ ASSIGN
     init(request_toggle) := FALSE;
     init(ack_toggle) := FALSE;
     init(request_received) := FALSE;
+    init(num_requests_received) := 0;
 
     next(server_request_state) :=
         case
             server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle: receiving;
+            server_request_state = received & !request_queue.empty : receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
 
-     next(server_ack_state) :=
+    next(server_ack_state) :=
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle : sending;
+            server_ack_state = sent & !ack_queue.full : sending;
             server_ack_state = sent & ack_queue.full : sent;
             TRUE : server_ack_state;
         esac;
@@ -150,9 +155,10 @@ ASSIGN
         TRUE : request_received;     
     esac;
 
-FAIRNESS
-    running
-
+    next(num_requests_received) := case
+        server_request_state = receiving & !request_queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
+    esac;
 
 -- =========================================================
 -- Nominal wrapper
@@ -161,15 +167,14 @@ MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : process Client(request_queue, ack_queue);
-    server : process Server(request_queue, ack_queue);
-    request_queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
-    ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
-
+    client : Client(request_queue, ack_queue);
+    server : Server(request_queue, ack_queue);
+    request_queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    ack_queue : Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
 
 
 -- =========================================================
--- Extended Server
+-- Server Extended
 -- =========================================================
 MODULE ServerExtended(request_queue, ack_queue)
 VAR
@@ -179,6 +184,7 @@ VAR
     request_toggle : boolean;  
     ack_toggle : boolean;
     request_received : boolean;
+    num_requests_received : 0..100;
 
 ASSIGN
     init(fault_mode) := none;
@@ -188,6 +194,7 @@ ASSIGN
     init(request_toggle) := FALSE;
     init(ack_toggle) := FALSE;
     init(request_received) := FALSE;
+    init(num_requests_received) := 0;
 
     next(fault_mode) :=
         case
@@ -198,35 +205,32 @@ ASSIGN
     next(server_request_state) :=
         case
         fault_mode = byzantine_server_request_state : {receiving, received};
-
             server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle: receiving;
+            server_request_state = received & !request_queue.empty : receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
 
-     next(server_ack_state) :=
+    next(server_ack_state) :=
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle : sending;
+            server_ack_state = sent & !ack_queue.full : sending;
             server_ack_state = sent & ack_queue.full : sent;
             TRUE : server_ack_state;
         esac;
 
     next(request_toggle) := case
         fault_mode = none &
-        server_request_state = receiving & !request_queue.empty : !request_toggle;
+        server_request_state = receiving & !request_queue.empty : !request_toggle;                   
         TRUE : request_toggle;                                                    
-    
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
-        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;                   
         TRUE : ack_toggle;                                                    
-    
     esac;
 
     next(request_received) := case
@@ -235,23 +239,23 @@ ASSIGN
         TRUE : request_received;     
     esac;
 
-FAIRNESS
-    running
+    next(num_requests_received) := case
+        server_request_state = receiving & !request_queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
+    esac;
 
 
 -- =========================================================
--- Nominal wrapper
+-- System wrapper
 -- =========================================================
-
-MODULE Extended()
+MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : process Client(request_queue, ack_queue);
-    server : process ServerExtended(request_queue, ack_queue);
-    request_queue : process Queue(Q_SIZE, client.request_toggle, server.request_toggle);
-    ack_queue : process Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
-
+    client : Client(request_queue, ack_queue);
+    server : ServerExtended(request_queue, ack_queue);
+    request_queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+    ack_queue : Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
 
 -- =========================================================
 --  Synchronization Module
@@ -261,8 +265,10 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
--- Whenever nominal server consumes, eventually an extended server consumes
-SPEC AG (nominal.server.server_request_state = received -> AF (extended.server.server_request_state = received))
+LTLSPEC G (
+    nominal.server.num_requests_received =
+    extended.server.num_requests_received
+)
 
 
 -- =========================================================
