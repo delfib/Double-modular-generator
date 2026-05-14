@@ -223,6 +223,7 @@ ASSIGN
     next(producer_id[2]) := case
         tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        tail = 2 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[2];
     esac;
 
@@ -272,7 +273,8 @@ ASSIGN
 
     next(next_client_turn) := case
         next_client_turn = 0 : 1;
-        next_client_turn = 1 : 0;
+        next_client_turn = 1 : 2;
+        next_client_turn = 2 : 0;
         TRUE : next_client_turn;
     esac;
 
@@ -505,7 +507,7 @@ ASSIGN
 
     client_states[0] := client1.ack_received;
     client_states[1] := client2.ack_received;
-    client_states[3] := client3.ack_received;
+    client_states[2] := client3.ack_received;
 
 
 -- =========================================================
