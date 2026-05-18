@@ -369,6 +369,9 @@ MODULE ServerExtended(request_queue, ack_queue, reply_ack_queue)
 VAR
     server_request_state    : {receiving, received};
     server_ack_state        : {sending, sent};
+    request_source : {none, clt0, clt1, clt2};
+    pending_ack : boolean;
+    ack_consume_marker : boolean;
     server_reply_ack_state  : {receiving, received};
 
     request_toggle          : boolean;
@@ -378,10 +381,6 @@ VAR
     request_received        : boolean;   -- guards sending ack 
     reply_ack_received      : boolean;    -- guards receiving requests 
     memory_cache            : {full, free};  -- reply cache
-
-    request_source : {none, clt0, clt1, clt2};
-    pending_ack : boolean;
-    ack_consume_marker : boolean;
     num_requests_received : 0..100;
 
 ASSIGN
@@ -390,13 +389,13 @@ ASSIGN
     init(server_reply_ack_state) := receiving;
     init(request_toggle)         := FALSE;
     init(ack_toggle)             := FALSE;
+    init(request_source) := none;
+    init(pending_ack) := FALSE;
+    init(ack_consume_marker) := FALSE;
     init(reply_ack_toggle)       := FALSE;
     init(request_received)       := FALSE;
     init(reply_ack_received)     := TRUE;
     init(memory_cache)           := free;
-    init(request_source) := none;
-    init(pending_ack) := FALSE;
-    init(ack_consume_marker) := FALSE;
     init(num_requests_received) := 0;
 
     next(server_request_state) := case
@@ -435,7 +434,7 @@ ASSIGN
     esac;
 
     next(reply_ack_toggle) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty  : !reply_ack_toggle;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
@@ -456,26 +455,26 @@ ASSIGN
             request_queue.producer_id[request_queue.head];
         TRUE : request_source;
     esac;
-
+    
     next(pending_ack) := case
-        server_ack_state = sending & !ack_queue.queue_full & request_received : TRUE;     -- We must wait after sending a new ack
+        server_ack_state = sending & !ack_queue.queue_full & request_received : TRUE;
         pending_ack & (
             (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
             (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker) |
             (request_source = clt2 & ack_queue.last_consumer_toggle[2] != ack_consume_marker)
-        ) : FALSE;     -- When the correct client consumes it, we stop waiting
+        ) : FALSE;
         TRUE : pending_ack;
     esac;
-
-     next(ack_consume_marker) := case
-        server_ack_state = sending & !ack_queue.queue_full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
+    
+    next(ack_consume_marker) := case
+            server_ack_state = sending & !ack_queue.queue_full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
         server_ack_state = sending & !ack_queue.queue_full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
         server_ack_state = sending & !ack_queue.queue_full & request_received & request_source = clt2 : ack_queue.last_consumer_toggle[2];
         TRUE : ack_consume_marker;
     esac;
+    
 
-    -- memory_cache: full after reply sent, free after reply_ack received 
-next(memory_cache) := case
+    next(memory_cache) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : free;  -- reply_ack received, free cache
         TRUE : memory_cache;
