@@ -1204,12 +1204,16 @@ def build_RRA_non_target_client(smv_content, n):
         text
     )
 
+    # Add reply_ack_toggle synchronization
+    text = text.replace(
+        'client_reply_ack_state = sent & !reply_ack_queue.queue_full : sending;',
+        'client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle[0] : sending;'
+    )
+
     # 3. Add new VAR fields
     servers = ', '.join(f'srv{i}' for i in range(n))
     new_vars = (
         f"    ack_source : {{none, {servers}}};\n"
-        "    pending_reply_ack : boolean;\n"
-        "    reply_ack_consume_marker : boolean;\n"
     )
 
     # per-server seen flags
@@ -1227,8 +1231,6 @@ def build_RRA_non_target_client(smv_content, n):
     # 4. Initialize new vars
     init_block = (
         "    init(ack_source) := none;\n"
-        "    init(pending_reply_ack) := FALSE;\n"
-        "    init(reply_ack_consume_marker) := FALSE;\n"
     )
 
     seen_init = '\n'.join(
@@ -1240,12 +1242,6 @@ def build_RRA_non_target_client(smv_content, n):
         r'(init\(ack_received\)\s*:=\s*FALSE;)',
         r'\1\n' + init_block + seen_init,
         text
-    )
-
-    # 5. Strengthen request send condition
-    text = text.replace(
-        '!request_queue.queue_full & reply_ack_sent',
-        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack'
     )
 
     # 7. ack_source logic
@@ -1266,6 +1262,14 @@ def build_RRA_non_target_client(smv_content, n):
     consume_cases = " |\n            ".join(
         f"(ack_source = srv{i} & reply_ack_queue.last_consumer_toggle[{i}] != reply_ack_consume_marker)"
         for i in range(n)
+    )
+
+    text = re.sub(
+        r'next\(pending_reply_ack\)\s*:=\s*case.*?esac;\s*'
+        r'next\(reply_ack_consume_marker\)\s*:=\s*case.*?esac;',
+        '',
+        text,
+        flags=re.DOTALL
     )
 
     pending_block = f"""
@@ -1293,14 +1297,10 @@ def build_RRA_non_target_client(smv_content, n):
 
     # 10. per-server seen tracking
     seen_blocks = '\n\n'.join(
-        f"""
-    next(client_ack_srv{i}_seen) := case
-        client_ack_state = receiving & !ack_queue.queue_empty &
-        ack_queue.last_producer_toggle[{i}] != client_ack_srv{i}_seen :
-            ack_queue.last_producer_toggle[{i}];
+        f"""    next(client_ack_srv{i}_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[{i}] != client_ack_srv{i}_seen : ack_queue.last_producer_toggle[{i}];
         TRUE : client_ack_srv{i}_seen;
-    esac;
-    """
+    esac;"""
         for i in range(n)
     )
 
@@ -1314,12 +1314,13 @@ def build_RRA_non_target_client(smv_content, n):
     )
 
     text = re.sub(
-        r'(FAIRNESS)',
+        r'(\s*next\(num_requests_sent\))',
         injection + r'\1',
         text
     )
 
     return text
+
 
 def build_RRA_non_target_server(smv_content, n):
     """Build the extended non-target Server for RRA protocol."""
