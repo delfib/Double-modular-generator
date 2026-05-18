@@ -254,7 +254,6 @@ ASSIGN
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
-
 VAR
     client : ClientExtended(request_queue, ack_queue);
     server : Server(request_queue, ack_queue);

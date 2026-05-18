@@ -67,11 +67,11 @@ class FaultInjectionEngine:
         if protocol_type == 'RR' and target == 'Client' and n > 1:
             extended_target = transform_RR_client(extended_target, n)
         if protocol_type == 'RRA' and target == 'Client' and n > 1:
-            extended_target = transform_RRA_client(extended_target, n) # goback
+            extended_target = transform_RRA_client(extended_target, n) 
         if protocol_type == 'RRA' and target == 'Server' and n > 1:
-            extended_target = transform_RRA_server(extended_target, n) # goback
+            extended_target = transform_RRA_server(extended_target, n) 
             
-        # --- Build an extended non-target module for RR and RRA protocol --- goback
+        # --- Build an extended non-target module for RR and RRA protocol
         patched_non_target = None
         if n > 1:
             patched_non_target = build_non_target_module(smv_content, protocol_type, target, n)

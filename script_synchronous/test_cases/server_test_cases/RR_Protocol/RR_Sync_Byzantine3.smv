@@ -254,64 +254,6 @@ DEFINE
     empty := (tail = head);
 
 
--- =========================================================
--- Client Extended
--- =========================================================
-MODULE ClientExtended(request_queue, ack_queue)
-VAR
-    client_request_state : {sending, sent};
-    client_ack_state     : {receiving, received};
-    request_toggle       : boolean;
-    ack_toggle           : boolean;
-    ack_received         : boolean;
-    num_requests_sent : 0..100;    
-
-ASSIGN
-    init(client_request_state) := sending;
-    init(client_ack_state)     := receiving;
-    init(request_toggle)       := FALSE;
-    init(ack_toggle)           := FALSE;
-    init(ack_received)         := TRUE;
-    init(num_requests_sent) := 0;
-
-    next(client_request_state) :=
-        case
-            client_request_state = sending & request_queue.full : sending;
-            client_request_state = sending & !request_queue.full & ack_received : sent;
-            client_request_state = sent & !request_queue.full : sending;
-            client_request_state = sent & request_queue.full : sent;
-            TRUE : client_request_state;
-        esac;
-
-    next(client_ack_state) :=
-        case
-            client_ack_state = receiving & ack_queue.empty : receiving;
-            client_ack_state = receiving & !ack_queue.empty : received;
-            client_ack_state = received & !ack_queue.empty : receiving;
-            client_ack_state = received & ack_queue.empty : received;
-            TRUE : client_ack_state;
-        esac;
-
-    next(request_toggle) := case
-        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;              
-        TRUE : request_toggle;                                                      
-    esac;
-
-    next(ack_toggle) := case
-        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;                   
-        TRUE : ack_toggle;                                                      
-    esac;
-
-    next(ack_received) := case
-        client_request_state = sending & !request_queue.full & ack_received : FALSE;       -- false because a new request has just been sent
-        client_ack_state = receiving & !ack_queue.empty : TRUE;          -- true because a new ack has been received
-        TRUE : ack_received;           
-    esac;
-
-    next(num_requests_sent) := case
-        client_request_state = sending & !request_queue.full & ack_received & num_requests_sent < 100 : num_requests_sent + 1;                   
-        TRUE : num_requests_sent;                                                    
-    esac;
 
 -- =========================================================
 -- Server Extended
@@ -387,11 +329,13 @@ ASSIGN
 -- =========================================================
 -- System wrapper
 -- =========================================================
+
+
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
-
 VAR
+    client : Client(request_queue, ack_queue);
     request_prod_toggles : array 0..2 of boolean;
 
     request_cons_toggles : array 0..2 of boolean;
@@ -400,13 +344,13 @@ VAR
 
     ack_cons_toggles     : array 0..2 of boolean;
 
-    client  : ClientExtended(request_queue, ack_queue);
     server1 : ServerExtended(request_queue, ack_queue, 0);
-    server2 : ServerExtended(request_queue, ack_queue, 1);
-    server3 : ServerExtended(request_queue, ack_queue, 2);
 
+    server2 : ServerExtended(request_queue, ack_queue, 1);
+
+    server3 : ServerExtended(request_queue, ack_queue, 2);
     request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
-    ack_queue     : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
 
 ASSIGN
     request_prod_toggles[0] := client.request_toggle;

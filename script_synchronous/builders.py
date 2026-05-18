@@ -503,8 +503,8 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     if redundancy == 1:
         # Replace ONLY the target instance
         text = re.sub(
-            rf'process\s+{target_module}\(',
-            f'process {target_module}Extended(',
+            rf'\s+{target_module}\(',
+            f' {target_module}Extended(',
             text
         )
 
@@ -512,29 +512,29 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
 
     n = redundancy
     is_server_target = target_module.lower() != 'client'
-    
+
     # Locate the original target instance line
     instance_pattern = rf'(\s*)(\w+)\s*:\s+{re.escape(target_module)}\(([^)]*)\);'
     match = re.search(instance_pattern, text)
+
     if not match:
         raise ValueError(f"Could not find instance of {target_module} in wrapper")
 
     indent = match.group(1)
-    params = match.group(3)   # e.g. "request_queue, ack_queue"
+    params = match.group(3)
 
     # Build Extended instances — each gets its index as the last argument
     instance_lines = []
     for i in range(1, n + 1):
         if target_module.lower() == 'client':
             instance_lines.append(
-                f"{indent}client{i} : process ClientExtended({params}, {i-1}, server.request_source);"
+                f"{indent}client{i} : ClientExtended({params}, server.request_source, {i-1}, client_states);"
             )
         else:
             instance_lines.append(
-                f"{indent}{target_module.lower()}{i} : process {target_module}Extended({params}, {i-1});"
+                f"{indent}{target_module.lower()}{i} : {target_module}Extended({params}, {i-1});"
             )
 
-    
     # Declare the four bridge arrays (prod/cons for each queue)
     bridge_lines = [
         f"{indent}request_prod_toggles : array 0..{n-1} of boolean;",
@@ -543,18 +543,25 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
         f"{indent}ack_cons_toggles     : array 0..{n-1} of boolean;",
     ]
 
-    
+    if not is_server_target:
+        bridge_lines.append(f"{indent}client_states : array 0..{n-1} of boolean;")
+
     # Build ASSIGN wiring
     assign_lines = []
 
     # Find the non-target instance in the wrapper and replace its module type
-    # with the patched renamed version (ClientExtended).
-    non_target       = 'client' if is_server_target else 'server'
-    non_target_ext   = f'{non_target.capitalize()}Extended'
-    non_target_pattern = rf'(\s*\w+\s*:\s*process\s+){re.escape(non_target.capitalize())}\(([^)]*)\);'
-    non_target_match   = re.search(non_target_pattern, text, re.IGNORECASE)
+    non_target = 'client' if is_server_target else 'server'
+
+    if not is_server_target:
+        non_target_ext = 'ServerExtended'
+    else:
+        non_target_ext = 'Client'
+
+    non_target_pattern = rf'(\s*\w+\s*:\s+){re.escape(non_target.capitalize())}\(([^)]*)\);'
+    non_target_match = re.search(non_target_pattern, text, re.IGNORECASE)
+
     if non_target_match:
-        non_target_inst = re.search(rf'(\w+)\s*:\s*process\s+{re.escape(non_target.capitalize())}\(', text, re.IGNORECASE).group(1)
+        non_target_inst = re.search(rf'(\w+)\s*:\s+{re.escape(non_target.capitalize())}\(', text, re.IGNORECASE).group(1)
         new_non_target_line = non_target_match.group(1) + non_target_ext + '(' + non_target_match.group(2) + ');'
         text = text[:non_target_match.start()] + new_non_target_line + text[non_target_match.end():]
     else:
@@ -591,6 +598,10 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
         for i in range(n):
             assign_lines.append(f"    ack_cons_toggles[{i}] := client{i+1}.ack_toggle;")
 
+        assign_lines.append("")
+        for i in range(n):
+            assign_lines.append(f"    client_states[{i}] := client{i+1}.ack_received;")
+
     assign_block = '\n'.join(assign_lines)
 
     # Replace both Queue instances with QueueExtended, passing the four arrays
@@ -605,11 +616,11 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
 
     new_req_queue = (
         req_match.group(0).split(':')[0]
-        + ': process QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);'
+        + ': QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);'
     )
     new_ack_queue = (
         ack_match.group(0).split(':')[0]
-        + ': process QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);'
+        + ': QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);'
     )
 
     # Apply back-to-front to preserve string offsets
@@ -632,6 +643,8 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
         text = re.sub(r'(ASSIGN\s*\n)', r'\1' + assign_block + '\n', text)
 
     return text
+
+
 
 def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     text = nominal_wrapper_text
@@ -1044,25 +1057,6 @@ def _build_self_id_define(n):
         "        esac;\n"
     )
 
-
-def build_RR_non_target_client(smv_content):
-    """Returns the non target extended client module"""
-    text = get_module_text(smv_content, 'Client')
-
-    text = re.sub(
-        r'MODULE\s+Client\s*\(',
-        'MODULE ClientExtended(',
-        text
-    )
-
-    text = re.sub(
-        r'(\w+\.last_(?!producer_id)\w+_toggle)(?!\[)',
-        r'\1[0]',
-        text
-    )
-
-    return text
-
 def build_RR_non_target_server(smv_content, n):
     """Returns the non targer extended server module"""
     text = get_module_text(smv_content, 'Server')
@@ -1397,9 +1391,7 @@ def build_RRA_non_target_server(smv_content, n):
 def build_non_target_module(smv_content, protocol, target, n):
     """Returns the extended non-target module when needed and None if no transformation is required."""
     if protocol == 'RR':
-        if target == 'Server':
-            return build_RR_non_target_client(smv_content)
-        elif target == 'Client':
+        if target == 'Client':
             return build_RR_non_target_server(smv_content, n)
 
     if protocol == 'RRA':

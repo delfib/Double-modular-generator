@@ -446,34 +446,37 @@ DEFINE
 -- =========================================================
 -- System wrapper
 -- =========================================================
+
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
-
 VAR
     request_prod_toggles : array 0..1 of boolean;
+
     request_cons_toggles : array 0..1 of boolean;
+
     ack_prod_toggles     : array 0..1 of boolean;
+
     ack_cons_toggles     : array 0..1 of boolean;
+
     client_states : array 0..1 of boolean;
 
-    client1  : ClientExtended(request_queue, ack_queue, server.request_source, 0, client_states);
-    client2  : ClientExtended(request_queue, ack_queue, server.request_source, 1, client_states);
-    server : ServerExtended(request_queue, ack_queue);
+    client1 : ClientExtended(request_queue, ack_queue, server.request_source, 0, client_states);
 
+    client2 : ClientExtended(request_queue, ack_queue, server.request_source, 1, client_states);
+    server : ServerExtended(request_queue, ack_queue);
     request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
-    ack_queue     : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
 
 ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
-    request_prod_toggles[1] := client2.request_toggle;  
+    request_prod_toggles[1] := client2.request_toggle;
     request_cons_toggles[0] := server.request_toggle;
-    request_cons_toggles[1] := FALSE;    -- dummy, stays FALSE forever
-
+    request_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
     ack_prod_toggles[0] := server.ack_toggle;
-    ack_prod_toggles[1] := FALSE;    -- dummy, stays FALSE forever
+    ack_prod_toggles[1] := FALSE;   -- dummy, stays FALSE forever
     ack_cons_toggles[0] := client1.ack_toggle;
-    ack_cons_toggles[1] := client2.ack_toggle;  
+    ack_cons_toggles[1] := client2.ack_toggle;
 
     client_states[0] := client1.ack_received;
     client_states[1] := client2.ack_received;
