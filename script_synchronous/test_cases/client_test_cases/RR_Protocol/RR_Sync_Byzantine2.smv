@@ -423,22 +423,24 @@ ASSIGN
         server_request_state = receiving & !request_queue.empty & !pending_ack : request_queue.producer_id[request_queue.head];
         TRUE : request_source;
     esac;
+    
 
     next(pending_ack) := case
-        server_ack_state = sending & !ack_queue.full & request_received : TRUE;     -- We must wait after sending a new ack
+        server_ack_state = sending & !ack_queue.full & request_received : TRUE;
         pending_ack & (
             (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
             (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker)
-        ) : FALSE;     -- When the correct client consumes it, we stop waiting
+        ) : FALSE;
         TRUE : pending_ack;
     esac;
+    
 
     next(ack_consume_marker) := case
-        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
+            server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
         server_ack_state = sending & !ack_queue.full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
         TRUE : ack_consume_marker;
     esac;
-    
+   
     next(num_requests_received) := case
         server_request_state = receiving & !request_queue.empty & !pending_ack & num_requests_received < 100 : num_requests_received + 1;                   
         TRUE : num_requests_received;                                                    

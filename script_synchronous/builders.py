@@ -1107,11 +1107,22 @@ def build_RR_non_target_server(smv_content, n):
         'server_request_state = receiving & !request_queue.empty & !pending_ack'
     )
 
+    # Add request_toggle synchronization
+    text = text.replace(
+        'server_request_state = received & !request_queue.empty : receiving;',
+        'server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;'
+    )
+
+    # Add ack_toggle synchronization
+    text = text.replace(
+        'server_ack_state = sent & !ack_queue.full : sending;',
+        'server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;'
+    )
+
     # 6. Add request_source logic
     request_source_block = """
     next(request_source) := case
-        server_request_state = receiving & !request_queue.empty & !pending_ack :
-            request_queue.producer_id[request_queue.head];
+        server_request_state = receiving & !request_queue.empty & !pending_ack : request_queue.producer_id[request_queue.head];
         TRUE : request_source;
     esac;
     """
@@ -1145,16 +1156,18 @@ def build_RR_non_target_server(smv_content, n):
     esac;
     """
 
-    # 9. Inject new blocks before FAIRNESS
+    # 9. Inject new blocks before next(num_requests_received)
     injection = request_source_block + "\n" + pending_block + "\n" + marker_block + "\n"
 
     text = re.sub(
-        r'(FAIRNESS)',
+        r'(\s*next\(num_requests_received\))',
         injection + r'\1',
         text
     )
 
     return text
+    
+
 
 def build_RRA_non_target_client(smv_content, n):
     text = get_module_text(smv_content, 'Client')
