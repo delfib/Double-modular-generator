@@ -177,26 +177,27 @@ VAR
 -- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
-    head                 : 0..3;
-    tail                 : 0..3;
-    last_producer_toggle : array 0..2 of boolean;
-    last_consumer_toggle : array 0..2 of boolean;
     producer_id : array 0..3 of {none, clt0, clt1, clt2};
+    head : 0..3;
+    tail : 0..3;
+    last_producer_toggle : array 0..2 of boolean;  -- last toggle value we saw
+    last_consumer_toggle : array 0..2 of boolean;
+
     next_client_turn : 0..2;
 
 ASSIGN
-    init(head)                    := 0;
-    init(tail)                    := 0;
-    init(last_producer_toggle[0]) := FALSE;
+    init(head) := 0;
+    init(tail) := 0;
+    init(producer_id[0]) := none;
+    init(producer_id[1]) := none;
+    init(producer_id[2]) := none;
+    init(producer_id[3]) := none;
+        init(last_producer_toggle[0]) := FALSE;
     init(last_producer_toggle[1]) := FALSE;
     init(last_producer_toggle[2]) := FALSE;
-    init(last_consumer_toggle[0]) := FALSE;
+        init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
     init(last_consumer_toggle[2]) := FALSE;
-    init(producer_id[0])          := none;
-    init(producer_id[1])          := none;
-    init(producer_id[2])          := none;
-    init(producer_id[3])          := none;
     init(next_client_turn) := {0,1,2};
 
     next(tail) := case
@@ -230,7 +231,7 @@ ASSIGN
     next(producer_id[3]) := case
         tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
-         tail = 3 & producer_toggles[2] != last_producer_toggle[2] : clt2;
+        tail = 3 & producer_toggles[2] != last_producer_toggle[2] : clt2;
         TRUE : producer_id[3];
     esac;
 
@@ -241,7 +242,7 @@ ASSIGN
         TRUE : head;
     esac;
 
-    next(last_producer_toggle[0]) := case
+        next(last_producer_toggle[0]) := case
         (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
         TRUE : last_producer_toggle[0];
     esac;
@@ -256,7 +257,7 @@ ASSIGN
         TRUE : last_producer_toggle[2];
     esac;
 
-    next(last_consumer_toggle[0]) := case
+        next(last_consumer_toggle[0]) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
         TRUE : last_consumer_toggle[0];
     esac;
@@ -279,7 +280,7 @@ ASSIGN
     esac;
 
 DEFINE
-    full  := ((tail + 1) mod Q_SIZE = head);
+    full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 

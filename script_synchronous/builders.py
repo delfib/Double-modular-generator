@@ -144,10 +144,9 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
 
     return text
 
-
 def build_extended_queue_RR(queue_text, redundancy, target_module):
     """
-    Build a single unified QueueExtended module for the RR protocol where
+    Build a single unified QueueExtended module for the RR and RRA protocol where
     BOTH the producer and consumer sides are extended to arrays of size n.
     """
     text = _strip_to_fairness(queue_text)
@@ -156,7 +155,12 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
     n = redundancy
     array_bound = _array_bound(n)
 
-    # Rename module and replace both scalar toggle params with array params
+    if is_client_target:
+        turn_var = 'next_client_turn'
+    else:
+        turn_var = 'next_server_turn'
+
+    # Rename module and replace scalar toggle params with arrays
     text = _replace_module_name(text, 'Queue', 'QueueExtended')
     text = re.sub(
         r'MODULE\s+QueueExtended\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
@@ -164,7 +168,16 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
         text
     )
 
-    # Replace both last_*_toggle boolean VARs with arrays
+    # Add next_client_turn / next_server_turn to VAR section
+    turn_range = f'0..{n - 1}'
+
+    text = text.replace(
+        'ASSIGN',
+        f'    {turn_var} : {turn_range};\n\nASSIGN',
+        1
+    )
+
+    # Replace last_*_toggle booleans with arrays
     for side in ('producer', 'consumer'):
         text = re.sub(
             rf'last_{side}_toggle\s*:\s*boolean;',
@@ -172,6 +185,7 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
             text
         )
 
+    # Add producer_id array for client redundancy
     if is_client_target and n > 1:
         # Add producer_id array
         producer_enum = ', '.join([f'clt{i}' for i in range(n)])
@@ -180,8 +194,7 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
             r'\1' + f'    producer_id : array 0..{3} of {{none, {producer_enum}}};\n',
             text
         )
-
-    # Replace single inits with per-slot inits for both sides
+    # Replace init(last_*_toggle) with array slot inits
     for side in ('producer', 'consumer'):
         init_slots = '\n'.join(
             f'    init(last_{side}_toggle[{i}]) := FALSE;' for i in range(n)
@@ -203,7 +216,16 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
             text
         )
 
-    # Replace next(tail) — driven by producer_toggles array
+    # Add init(next_client_turn) / init(next_server_turn)
+    init_set = '{' + ','.join(str(i) for i in range(n)) + '}'
+
+    text = re.sub(
+        r'(init\(last_consumer_toggle\[' + str(n - 1) + r'\]\)\s*:=\s*FALSE;)',
+        r'\1' + f'\n    init({turn_var}) := {init_set};',
+        text
+    )
+
+    # Replace next(tail)
     tail_cases = '\n'.join(
         f'        (producer_toggles[{i}] != last_producer_toggle[{i}]) : (tail + 1) mod Q_SIZE;'
         for i in range(n)
@@ -215,14 +237,16 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
         flags=re.DOTALL
     )
 
+    # Add next(producer_id[i])
     if is_client_target and n > 1:
-        # Add next(producer_id[i])
         pid_cases = []
-        for q in range(4):  # Q_SIZE
+        for q in range(4):
+
             cases = '\n'.join(
                 f'        tail = {q} & producer_toggles[{i}] != last_producer_toggle[{i}] : clt{i};'
                 for i in range(n)
             )
+
             pid_cases.append(
                 f'    next(producer_id[{q}]) := case\n{cases}\n        TRUE : producer_id[{q}];\n    esac;'
             )
@@ -235,7 +259,7 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
             flags=re.DOTALL
         )
 
-    # Replace next(head) — driven by consumer_toggles array
+    # Replace next(head)
     head_cases = '\n'.join(
         f'        (consumer_toggles[{i}] != last_consumer_toggle[{i}]) : (head + 1) mod Q_SIZE;'
         for i in range(n)
@@ -247,7 +271,7 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
         flags=re.DOTALL
     )
 
-    # Replace next(last_producer_toggle) with per-slot nexts
+    # Replace next(last_producer_toggle)
     prod_next_slots = '\n\n'.join(
         f'    next(last_producer_toggle[{i}]) := case\n'
         f'        (producer_toggles[{i}] != last_producer_toggle[{i}]) : producer_toggles[{i}];\n'
@@ -261,8 +285,7 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
         text,
         flags=re.DOTALL
     )
-
-    # Replace next(last_consumer_toggle) with per-slot nexts
+    # Replace next(last_consumer_toggle)
     cons_next_slots = '\n\n'.join(
         f'    next(last_consumer_toggle[{i}]) := case\n'
         f'        (consumer_toggles[{i}] != last_consumer_toggle[{i}]) : consumer_toggles[{i}];\n'
@@ -276,23 +299,28 @@ def build_extended_queue_RR(queue_text, redundancy, target_module):
         text,
         flags=re.DOTALL
     )
-    if is_client_target and n > 1:
-        # Add the request_consumed DEFINE if not already present
-        produced_def = (
-            '    request_produced := '
-            + ' | '.join(
-                f'last_producer_toggle[{i}] != producer_toggles[{i}]'
-                for i in range(n)
-            )
-            + ';\n'
-        )
 
-        text = re.sub(
-            r'(DEFINE\s*\n)',
-            r'\1' + produced_def,
-            text
-        )
-    else :
+   # Add next(next_client_turn) / next(next_server_turn)
+    turn_cases = '\n'.join(
+        f'        {turn_var} = {i} : {(i + 1) % n};'
+        for i in range(n)
+    )
+
+    turn_next_block = (
+        f'    next({turn_var}) := case\n'
+        f'{turn_cases}\n'
+        f'        TRUE : {turn_var};\n'
+        f'    esac;\n\n'
+    )
+
+    text = re.sub(
+        r'(DEFINE)',
+        turn_next_block + r'\1',
+        text
+    )
+
+    # Add request_consumed DEFINE
+    if not is_client_target and n > 1:
         if 'request_consumed' not in text:
             consumed_def = (
                 '    request_consumed := '
@@ -326,12 +354,12 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
 
     # Rename wrapper module
     text = re.sub(r'MODULE\s+Nominal\s*\(\)', 'MODULE Extended()', text)
-    
+
     if redundancy == 1:
         # Replace ONLY the target instance with Extended version
         text = re.sub(
             rf'\s+{target_module}\(',
-            f'{target_module}Extended(',
+            f' {target_module}Extended(',
             text
         )
 
@@ -348,45 +376,66 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
     indent = match.group(1)
     params = match.group(3)
 
-    # Build Extended instances, passing their index as the last argument
-    instance_lines = []
-    for i in range(1, n + 1):
-        instance_lines.append(
-            f"{indent}{target_module.lower()}{i} : {target_module}Extended({params}, {i-1});"
-        )
-
-    # Determine which queue side is widened and build toggle arrays accordingly
+    # Determine which queue side is widened
     is_server_target = target_module.lower() != 'client'
 
+    # ------------------------------------------------------------------
+    # Build Extended instances
+    # ------------------------------------------------------------------
+    instance_lines = []
+
+    for i in range(1, n + 1):
+
+        if not is_server_target:
+            # ClientExtended(queue, id, client_states)
+            instance_lines.append(
+                f"{indent}{target_module.lower()}{i} : {target_module}Extended({params}, {i-1}, client_states);")
+        else:
+            # ServerExtended(queue, id)
+            instance_lines.append(
+                f"{indent}{target_module.lower()}{i} : "
+                f"{target_module}Extended({params}, {i-1});"
+            )
+
+    # ------------------------------------------------------------------
+    # Build toggle arrays
+    # ------------------------------------------------------------------
     if is_server_target:
-        # server_toggles array fed from each server instance's request_toggle
         array_name   = 'server_toggles'
         toggle_field = 'request_toggle'
-        queue_param  = 'server_toggles'   # replaces the last param in Queue(...)
+        queue_param  = 'server_toggles'
     else:
-        # client_toggles array fed from each client instance's request_toggle
         array_name   = 'client_toggles'
         toggle_field = 'request_toggle'
-        queue_param  = 'client_toggles'   # replaces the first param in Queue(...)
+        queue_param  = 'client_toggles'
 
     bridge_lines = [
         f"{indent}{array_name} : array 0..{n-1} of boolean;"
     ]
 
-    # Locate and update the Queue instance line
+    # Add client_states array ONLY for client redundancy
+    if not is_server_target:
+        bridge_lines.append(
+            f"{indent}client_states : array 0..{n-1} of {{sending, sent}};"
+        )
+
+    # ------------------------------------------------------------------
+    # Locate and update Queue instance
+    # ------------------------------------------------------------------
     queue_pattern = r'(\s*)(\w+)\s*:\s+Queue\(([^)]*)\);'
     queue_match = re.search(queue_pattern, text)
+
     if not queue_match:
         raise ValueError("Could not find Queue instance in wrapper")
 
-    q_indent    = queue_match.group(1)
-    q_params    = queue_match.group(3)
+    q_indent     = queue_match.group(1)
+    q_params     = queue_match.group(3)
     q_param_list = [p.strip() for p in q_params.split(',')]
 
     if is_server_target:
-        q_param_list[-1] = queue_param   # replace server_toggle with server_toggles
+        q_param_list[-1] = queue_param
     else:
-        q_param_list[1]  = queue_param   # replace client_toggle with client_toggles
+        q_param_list[1] = queue_param
 
     new_queue_line = (
         f"{q_indent}queue : QueueExtended("
@@ -394,16 +443,30 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
         + ");"
     )
 
-    # Build ASSIGN block wiring toggle arrays to instance toggle fields
+    # ------------------------------------------------------------------
+    # Build ASSIGN block
+    # ------------------------------------------------------------------
     assign_lines = '\n'.join(
         f"    {array_name}[{i}] := {target_module.lower()}{i+1}.{toggle_field};"
         for i in range(n)
     )
 
-    # Splice everything together
-    new_instance_block = '\n'.join(bridge_lines + instance_lines)
+    # Add client_states wiring ONLY for client redundancy
+    if not is_server_target:
 
-    # Replace original target instance with the new block
+        state_lines = '\n'.join(
+            f"    client_states[{i}] := client{i+1}.client_state;"
+            for i in range(n)
+        )
+
+        assign_lines += '\n\n' + state_lines
+
+    # ------------------------------------------------------------------
+    # Splice everything together
+    # ------------------------------------------------------------------
+    new_instance_block = '\n'.join(bridge_lines + [''] + instance_lines)
+
+    # Replace original target instance with new block
     text = text[:match.start()] + new_instance_block + text[match.end():]
 
     # Replace Queue with QueueExtended
@@ -413,7 +476,11 @@ def build_extended_wrapper_R(nominal_wrapper_text, target_module, redundancy):
     if 'ASSIGN' not in text:
         text = text.rstrip() + f'\n\nASSIGN\n{assign_lines}\n'
     else:
-        text = re.sub(r'(ASSIGN\s*\n)', r'\1' + assign_lines + '\n', text)
+        text = re.sub(
+            r'(ASSIGN\s*\n)',
+            r'\1' + assign_lines + '\n',
+            text
+        )
 
     return text
 
@@ -447,7 +514,7 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     is_server_target = target_module.lower() != 'client'
     
     # Locate the original target instance line
-    instance_pattern = rf'(\s*)(\w+)\s*:\s*process\s+{re.escape(target_module)}\(([^)]*)\);'
+    instance_pattern = rf'(\s*)(\w+)\s*:\s+{re.escape(target_module)}\(([^)]*)\);'
     match = re.search(instance_pattern, text)
     if not match:
         raise ValueError(f"Could not find instance of {target_module} in wrapper")
@@ -527,7 +594,7 @@ def build_extended_wrapper_RR(nominal_wrapper_text, target_module, redundancy):
     assign_block = '\n'.join(assign_lines)
 
     # Replace both Queue instances with QueueExtended, passing the four arrays
-    req_queue_pattern = r'(\s*\w+\s*:\s*process\s+Queue\(([^)]*)\);)'
+    req_queue_pattern = r'(\s*\w+\s*:\s+Queue\(([^)]*)\);)'
     queue_matches = list(re.finditer(req_queue_pattern, text))
     if len(queue_matches) < 2:
         raise ValueError("Could not find two Queue instances in RR wrapper")
@@ -1347,7 +1414,7 @@ def build_extended_queue(queue_text, redundancy, target_module, protocol_type):
     """Invoke the correct queue-extension builder based on protocol type."""
     if protocol_type == 'R':
         return [build_extended_queue_R(queue_text, redundancy, target_module)]
-    elif protocol_type in ('RR', 'RRA'):            # goback
+    elif protocol_type in ('RR', 'RRA'):        
         return [build_extended_queue_RR(queue_text, redundancy, target_module)]
     else:
         raise ValueError(f"Unknown protocol type: '{protocol_type}'")
