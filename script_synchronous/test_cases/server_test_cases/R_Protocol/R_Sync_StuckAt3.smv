@@ -1,7 +1,6 @@
 -- =========================================================
 -- Queue module
 -- =========================================================
-
 MODULE Queue(Q_SIZE, client_toggle, server_toggle)
 VAR
     head : 0..3;
@@ -34,7 +33,6 @@ ASSIGN
         (server_toggle != last_server_toggle) : server_toggle;
         TRUE : last_server_toggle;
     esac;
-
 
 DEFINE
     full := ((tail + 1) mod Q_SIZE = head);
@@ -70,7 +68,7 @@ ASSIGN
         TRUE : request_toggle;                                                    
     esac;
 
-     next(num_requests_sent) := case
+    next(num_requests_sent) := case
         client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
         TRUE : num_requests_sent;                                                    
     esac;
@@ -120,13 +118,15 @@ VAR
     server : Server(queue);
     queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
+
 MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles)
 VAR
     head : 0..3;
     tail : 0..3;
     last_client_toggle : boolean;  -- last toggle value we saw
     last_server_toggle : array 0..2 of boolean;
-    next_server_turn   : 0..2;  
+
+    next_server_turn : 0..2;
 
 ASSIGN
     init(head) := 0;
@@ -214,16 +214,16 @@ ASSIGN
         esac;
 
     next(request_toggle) := case
+        fault_mode = none &
         server_state = receiving & !queue.empty & queue.next_server_turn = server_id : !request_toggle;
         TRUE : request_toggle;                                                    
-    
     esac;
 
     next(num_requests_received) := case
+        fault_mode = none &
         server_state = receiving & !queue.empty & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
         TRUE : num_requests_received;                                                    
     esac;
-
 
 
 -- =========================================================
@@ -237,6 +237,7 @@ DEFINE
 VAR
     client : Client(queue);
     server_toggles : array 0..2 of boolean;
+
 
     server1 : ServerExtended(queue, 0);
 
@@ -258,7 +259,6 @@ MODULE Sync()
 VAR
     nominal  : Nominal();
     extended : Extended();
-
 
 LTLSPEC G (
     nominal.server.num_requests_received =

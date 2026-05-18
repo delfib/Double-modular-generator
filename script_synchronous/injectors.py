@@ -118,24 +118,51 @@ class BaseInjector:
         return text
 
     def _protect_toggle_logic(self, text, original_name):
-        """Add a 'fault_mode = none' guard to every toggle condition found in the module."""
+        """Add a 'fault_mode = none' guard to toggle logic and request counters."""
         # Collect all toggle variable names that appear in the module
         toggle_vars = re.findall(r'next\((\w*toggle\w*)\)\s*:=\s*case', text)
 
         for toggle_var in toggle_vars:
             pattern = rf'(next\({re.escape(toggle_var)}\)\s*:=\s*case)(.*?)(esac;)'
-            match   = re.search(pattern, text, re.DOTALL)
+            match = re.search(pattern, text, re.DOTALL)
             if not match:
                 continue
 
-            cases     = match.group(2)
+            cases = match.group(2)
             new_cases = []
             for line in cases.split('\n'):
-                # Guard only lines that actually perform the toggle (contain !<toggle_var>)
+                # Guard only lines that actually perform the toggle
                 if f'!{toggle_var}' in line and ':' in line:
-                    parts     = line.split(':', 1)
+                    parts = line.split(':', 1)
                     condition = parts[0].strip()
-                    action    = parts[1].strip()
+                    action = parts[1].strip()
+
+                    new_cases.append(
+                        f"        fault_mode = none &\n"
+                        f"        {condition} : {action}\n"
+                    )
+                else:
+                    new_cases.append(line + '\n')
+
+            new_block = match.group(1) + ''.join(new_cases) + '    ' + match.group(3)
+            text = text[:match.start()] + new_block + text[match.end():]
+
+        # Guard request counters
+        for counter_var in ['num_requests_sent', 'num_requests_received']:
+            pattern = rf'(next\({counter_var}\)\s*:=\s*case)(.*?)(esac;)'
+            match = re.search(pattern, text, re.DOTALL)
+
+            if not match:
+                continue
+
+            cases = match.group(2)
+            new_cases = []
+
+            for line in cases.split('\n'):
+                if f'{counter_var} + 1' in line and ':' in line:
+                    parts = line.split(':', 1)
+                    condition = parts[0].strip()
+                    action = parts[1].strip()
                     new_cases.append(
                         f"        fault_mode = none &\n"
                         f"        {condition} : {action}\n"

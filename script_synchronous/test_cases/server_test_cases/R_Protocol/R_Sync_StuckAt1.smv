@@ -134,7 +134,7 @@ ASSIGN
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
     init(num_requests_received) := 0;
-     
+
     next(fault_mode) :=
         case
             fault_mode = none : {none, stuck_receiving, stuck_received};
@@ -154,12 +154,14 @@ ASSIGN
         esac;
 
     next(request_toggle) := case
-        server_state = receiving & !queue.empty : !request_toggle;                   
+        fault_mode = none &
+        server_state = receiving & !queue.empty : !request_toggle;
         TRUE : request_toggle;                                                    
     esac;
 
     next(num_requests_received) := case
-        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        fault_mode = none &
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;
         TRUE : num_requests_received;                                                    
     esac;
 

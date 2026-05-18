@@ -853,6 +853,17 @@ def transform_R_client(text, n):
 
     return text
 
+""" Apply R-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
+def transform_R_server(text):
+    condition = '!queue.empty & queue.next_server_turn = server_id'
+
+    text = text.replace(
+        'server_state = receiving & !queue.empty',
+        f'server_state = receiving & {condition}'
+    )
+
+    return text
+
 """ Apply RR-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_RR_client(text, n):
     # 1. Add ack_owner + client_id parameters
