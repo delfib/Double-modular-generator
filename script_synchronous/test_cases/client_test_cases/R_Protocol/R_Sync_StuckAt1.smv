@@ -131,6 +131,7 @@ VAR
 
 ASSIGN
     init(fault_mode) := none;
+
     init(client_state) := sending;
     init(request_toggle) := FALSE;
     init(num_requests_sent) := 0;
@@ -155,16 +156,17 @@ ASSIGN
  
     next(request_toggle) := case
         fault_mode = none &
-        client_state = sending & !queue.full : !request_toggle;                   
+        client_state = sending & !queue.full : !request_toggle;
         TRUE : request_toggle;                                                    
+    
     esac;
 
     next(num_requests_sent) := case
         fault_mode = none &
-        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;
         TRUE : num_requests_sent;                                                    
+    
     esac;
-
 
 
 -- =========================================================

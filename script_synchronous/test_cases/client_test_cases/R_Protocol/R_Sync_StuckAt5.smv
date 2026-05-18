@@ -126,7 +126,6 @@ MODULE QueueExtended(Q_SIZE, client_toggles, server_toggle)
 VAR
     head : 0..3;
     tail : 0..3;
-
     last_client_toggle : array 0..4 of boolean;
     last_server_toggle : boolean;
 
@@ -135,16 +134,13 @@ VAR
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
-
-    init(last_client_toggle[0]) := FALSE;
+        init(last_client_toggle[0]) := FALSE;
     init(last_client_toggle[1]) := FALSE;
     init(last_client_toggle[2]) := FALSE;
     init(last_client_toggle[3]) := FALSE;
     init(last_client_toggle[4]) := FALSE;
-
-    init(last_server_toggle) := FALSE;
-
     init(next_client_turn) := {0,1,2,3,4};
+    init(last_server_toggle) := FALSE;
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -160,7 +156,7 @@ ASSIGN
         TRUE : head;
     esac;
 
-    next(last_client_toggle[0]) := case
+        next(last_client_toggle[0]) := case
         (client_toggles[0] != last_client_toggle[0]) : client_toggles[0];
         TRUE : last_client_toggle[0];
     esac;
@@ -184,7 +180,6 @@ ASSIGN
         (client_toggles[4] != last_client_toggle[4]) : client_toggles[4];
         TRUE : last_client_toggle[4];
     esac;
-
 
     next(last_server_toggle) := case
         (server_toggle != last_server_toggle) : server_toggle;
@@ -213,8 +208,8 @@ MODULE ClientExtended(queue, client_id, client_states)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
     client_state : {sending, sent};
-    request_toggle : boolean;
-    num_requests_sent : 0..100;
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(fault_mode) := none;
@@ -226,77 +221,52 @@ ASSIGN
     next(fault_mode) :=
         case
             fault_mode = none : {none, stuck_sending, stuck_sent};
-            TRUE : fault_mode;
+            TRUE              : fault_mode;
         esac;
 
     next(client_state) :=
         case
-            fault_mode = stuck_sending : sending;
-            fault_mode = stuck_sent : sent;
+        fault_mode = stuck_sending : sending;
+        fault_mode = stuck_sent : sent;
 
             client_state = sending & queue.full : sending;
-
-            client_state = sending & !queue.full & queue.next_client_turn = client_id
-                & (client_states[0] = sending)
-                & (client_states[1] = sending)
-                & (client_states[2] = sending)
-                & (client_states[3] = sending)
-                & (client_states[4] = sending)
-                : sent;
-
+            client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending) : sent;
             client_state = sent & !queue.full : sending;
-
             client_state = sent & queue.full : sent;
-
             TRUE : client_state;
         esac;
-
-
+ 
     next(request_toggle) := case
-        fault_mode = none
-            & client_state = sending
-            & !queue.full
-            & queue.next_client_turn = client_id
-            & (client_states[0] = sending)
-            & (client_states[1] = sending)
-            & (client_states[2] = sending)
-            & (client_states[3] = sending)
-            & (client_states[4] = sending)
-            : !request_toggle;
-
-        TRUE : request_toggle;
+        fault_mode = none &
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending) : !request_toggle;
+        TRUE : request_toggle;                                                    
+    
     esac;
 
     next(num_requests_sent) := case
-        fault_mode = none
-            & client_state = sending
-            & !queue.full
-            & queue.next_client_turn = client_id
-            & (client_states[0] = sending)
-            & (client_states[1] = sending)
-            & (client_states[2] = sending)
-            & (client_states[3] = sending)
-            & (client_states[4] = sending)
-            & num_requests_sent < 100
-            : num_requests_sent + 1;
-
-        TRUE : num_requests_sent;
+        fault_mode = none &
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending) & num_requests_sent < 100 : num_requests_sent + 1;
+        TRUE : num_requests_sent;                                                    
+    
     esac;
-
 
 
 -- =========================================================
 -- Extended Module
 -- =========================================================
-MODULE Extended()
 
+
+MODULE Extended()
 DEFINE
     Q_SIZE := 4;
-
 VAR
-    client_toggles : array 0..7 of boolean;
+    client_toggles : array 0..4 of boolean;
 
-    client_states : array 0..7 of {sending, sent};
+    client_states : array 0..4 of {sending, sent};
+
 
     client1 : ClientExtended(queue, 0, client_states);
 
@@ -307,15 +277,8 @@ VAR
     client4 : ClientExtended(queue, 3, client_states);
 
     client5 : ClientExtended(queue, 4, client_states);
-
-
     server : Server(queue);
-
-    queue : QueueExtended(
-        Q_SIZE,
-        client_toggles,
-        server.request_toggle
-    );
+    queue : QueueExtended(Q_SIZE, client_toggles, server.request_toggle);
 
 ASSIGN
     client_toggles[0] := client1.request_toggle;
@@ -329,6 +292,7 @@ ASSIGN
     client_states[2] := client3.client_state;
     client_states[3] := client4.client_state;
     client_states[4] := client5.client_state;
+
 
 -- =========================================================
 --  Synchronization Module

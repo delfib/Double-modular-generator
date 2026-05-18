@@ -5,7 +5,7 @@ from xml_parser import parse_fault_model
 from smv_utils  import load_smv, save_smv, find_module
 from injectors  import create_injector
 from builders   import (build_extended_queue, build_extended_wrapper, build_sync_module, 
-                        build_non_target_module, transform_RR_client, transform_RRA_client, transform_RRA_server)
+                        build_non_target_module, transform_RR_client, transform_R_client, transform_RRA_client, transform_RRA_server)
 
 # ---------------------------------------------------------------------------
 # SMV module helpers
@@ -64,6 +64,8 @@ class FaultInjectionEngine:
             target_text, target, f'{target}Extended', n
         )
 
+        if protocol_type == 'R' and target == 'Client' and n > 1:
+            extended_target = transform_R_client(extended_target, n)
         if protocol_type == 'RR' and target == 'Client' and n > 1:
             extended_target = transform_RR_client(extended_target, n)
         if protocol_type == 'RRA' and target == 'Client' and n > 1:

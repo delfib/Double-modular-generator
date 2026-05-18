@@ -129,6 +129,7 @@ VAR
     tail : 0..3;
     last_client_toggle : array 0..2 of boolean;  -- last toggle value we saw
     last_server_toggle : boolean;
+
     next_client_turn : 0..2;
 
 ASSIGN
@@ -137,8 +138,8 @@ ASSIGN
         init(last_client_toggle[0]) := FALSE;
     init(last_client_toggle[1]) := FALSE;
     init(last_client_toggle[2]) := FALSE;
-    init(last_server_toggle) := FALSE;
     init(next_client_turn) := {0,1,2};
+    init(last_server_toggle) := FALSE;
 
     next(tail) := case
         (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -185,7 +186,6 @@ DEFINE
 
 
 
-
 -- =========================================================
 -- Client Extended
 -- =========================================================
@@ -193,8 +193,8 @@ MODULE ClientExtended(queue, client_id, client_states)
 VAR
     fault_mode : {none, byzantine_client_state};
     client_state : {sending, sent};
-    request_toggle : boolean;    
-    num_requests_sent : 0..100;       
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
 
 ASSIGN
     init(fault_mode) := none;
@@ -221,19 +221,20 @@ ASSIGN
             TRUE : client_state;
         esac;
  
-    
     next(request_toggle) := case
         fault_mode = none &
         client_state = sending & !queue.full & queue.next_client_turn = client_id &
-                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : !request_toggle;                     
-        TRUE : request_toggle;                                                
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) : !request_toggle;
+        TRUE : request_toggle;                                                    
+    
     esac;
 
     next(num_requests_sent) := case
         fault_mode = none &
         client_state = sending & !queue.full & queue.next_client_turn = client_id &
-                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & num_requests_sent < 100 : num_requests_sent + 1;                   
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending) & num_requests_sent < 100 : num_requests_sent + 1;
         TRUE : num_requests_sent;                                                    
+    
     esac;
 
 
@@ -247,7 +248,9 @@ DEFINE
     Q_SIZE := 4;
 VAR
     client_toggles : array 0..2 of boolean;
+
     client_states : array 0..2 of {sending, sent};
+
 
     client1 : ClientExtended(queue, 0, client_states);
 
@@ -281,7 +284,6 @@ LTLSPEC G (
     extended.client2.num_requests_sent + 
     extended.client3.num_requests_sent 
 )
-
 
 -- =========================================================
 --  Main Module

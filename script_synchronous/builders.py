@@ -828,6 +828,30 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
 
     return text
 
+""" Apply R-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
+def transform_R_client(text, n):
+    text = re.sub(
+        r'MODULE\s+ClientExtended\(([^)]*)\)',
+        lambda m: f"MODULE ClientExtended({m.group(1)}, client_states)",
+        text
+    )
+
+    sync_condition = (
+        "queue.next_client_turn = client_id &\n"
+        "                (" +
+        " & ".join(
+            f"client_states[{i}] = sending"
+            for i in range(n)
+        ) +
+        ")"
+    )
+
+    text = text.replace(
+        'client_state = sending & !queue.full',
+        f'client_state = sending & !queue.full & {sync_condition}'
+    )
+
+    return text
 
 """ Apply RR-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_RR_client(text, n):
