@@ -659,8 +659,8 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
 
     if redundancy == 1:
         text = re.sub(
-            rf'process\s+{target_module}\(',
-            f'process {target_module}Extended(',
+            rf'\s+{target_module}\(',
+            f' {target_module}Extended(',
             text
         )
         return text
@@ -671,7 +671,7 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     channels = ["request", "ack", "reply_ack"]
 
     # Find target instance
-    instance_pattern = rf'(\s*)(\w+\s*:\s*process\s+{re.escape(target_module)}\([^)]*\);)'
+    instance_pattern = rf'(\s*)(\w+\s*:\s+{re.escape(target_module)}\([^)]*\);)'
     match = re.search(instance_pattern, text)
     if not match:
         raise ValueError(f"Could not find instance of {target_module}")
@@ -687,7 +687,7 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     non_target = 'client' if is_server_target else 'server'
     non_target_ext = f'{non_target.capitalize()}Extended'
 
-    non_target_pattern = rf'(\s*\w+\s*:\s*process\s+){non_target.capitalize()}\(([^)]*)\);'
+    non_target_pattern = rf'(\s*\w+\s*:\s+){non_target.capitalize()}\(([^)]*)\);'
 
     non_target_match = re.search(non_target_pattern, text, re.IGNORECASE)
 
@@ -706,11 +706,11 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     for i in range(n):
         if target_module.lower() == 'client':
             instance_lines.append(
-                f"{indent}client{i+1} : process ClientExtended({params}, {i}, server.request_source);"
+                f"{indent}client{i+1} : ClientExtended({params}, server.request_source, {i}, reply_ack_sent_states, pending_reply_ack_states);"
             )
         else:
             instance_lines.append(
-                f"{indent}server{i+1} : process ServerExtended({params}, {i}, client.ack_source);"
+                f"{indent}server{i+1} : ServerExtended({params}, client.ack_source, {i});"
             )
 
     # Bridge arrays
@@ -719,8 +719,12 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
         bridge_lines.append(f"{indent}{ch}_prod_toggles : array 0..{n-1} of boolean;")
         bridge_lines.append(f"{indent}{ch}_cons_toggles : array 0..{n-1} of boolean;")
 
+    if not is_server_target:
+        bridge_lines.append(f"{indent}reply_ack_sent_states : array 0..{n-1} of boolean;")
+        bridge_lines.append(f"{indent}pending_reply_ack_states : array 0..{n-1} of boolean;")
+
     # Replace Queue instances
-    queue_pattern = r'(\s*\w+\s*:\s*process\s+Queue\(([^)]*)\);)'
+    queue_pattern = r'(\s*\w+\s*:\s+Queue\(([^)]*)\);)'
     queue_matches = list(re.finditer(queue_pattern, text))
 
     if len(queue_matches) < len(channels):
@@ -730,7 +734,7 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
     new_queue_lines = []
     for ch in channels:
         new_queue_lines.append(
-            f": process QueueExtended(Q_SIZE, {ch}_prod_toggles, {ch}_cons_toggles);"
+            f": QueueExtended(Q_SIZE, {ch}_prod_toggles, {ch}_cons_toggles);"
         )
 
     # Apply replacements BACKWARDS
@@ -795,6 +799,20 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
                 assign_lines.append(f"    {ch}_cons_toggles[0] := server.reply_ack_toggle;")
                 for i in range(1, n):
                     assign_lines.append(f"    {ch}_cons_toggles[{i}] := FALSE;")
+
+        assign_lines.append("")
+
+        for i in range(n):
+            assign_lines.append(
+                f"    reply_ack_sent_states[{i}] := client{i+1}.reply_ack_sent;"
+            )
+
+        assign_lines.append("")
+
+        for i in range(n):
+            assign_lines.append(
+                f"    pending_reply_ack_states[{i}] := client{i+1}.pending_reply_ack;"
+            )
 
     assign_block = "\n".join(assign_lines)
 

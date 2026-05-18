@@ -614,38 +614,44 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
+    
     request_prod_toggles : array 0..1 of boolean;
+
     request_cons_toggles : array 0..1 of boolean;
-    ack_prod_toggles     : array 0..1 of boolean;
-    ack_cons_toggles     : array 0..1 of boolean;
+
+    ack_prod_toggles : array 0..1 of boolean;
+
+    ack_cons_toggles : array 0..1 of boolean;
+
     reply_ack_prod_toggles : array 0..1 of boolean;
+
     reply_ack_cons_toggles : array 0..1 of boolean;
+
     reply_ack_sent_states : array 0..1 of boolean;
+
     pending_reply_ack_states : array 0..1 of boolean;
 
-    client1  : ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 0, reply_ack_sent_states, pending_reply_ack_states);
-    client2  : ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 1, reply_ack_sent_states, pending_reply_ack_states);
-    server : ServerExtended(request_queue, ack_queue, reply_ack_queue);
+    client1 : ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 0, reply_ack_sent_states, pending_reply_ack_states);
 
+    client2 : ClientExtended(request_queue, ack_queue, reply_ack_queue, server.request_source, 1, reply_ack_sent_states, pending_reply_ack_states);
+    server : ServerExtended(request_queue, ack_queue, reply_ack_queue);
     request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
-    ack_queue     : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
 
 ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
-    request_prod_toggles[1] := client2.request_toggle; 
+    request_prod_toggles[1] := client2.request_toggle;
     request_cons_toggles[0] := server.request_toggle;
-    request_cons_toggles[1] := FALSE;     -- dummy, stays FALSE forever
-
+    request_cons_toggles[1] := FALSE;
     ack_prod_toggles[0] := server.ack_toggle;
-    ack_prod_toggles[1] := FALSE;     -- dummy, stays FALSE forever
+    ack_prod_toggles[1] := FALSE;
     ack_cons_toggles[0] := client1.ack_toggle;
-    ack_cons_toggles[1] := client2.ack_toggle; 
-
+    ack_cons_toggles[1] := client2.ack_toggle;
     reply_ack_prod_toggles[0] := client1.reply_ack_toggle;
     reply_ack_prod_toggles[1] := client2.reply_ack_toggle;
     reply_ack_cons_toggles[0] := server.reply_ack_toggle;
-    reply_ack_cons_toggles[1] := FALSE;     -- dummy, stays FALSE forever
+    reply_ack_cons_toggles[1] := FALSE;
 
     reply_ack_sent_states[0] := client1.reply_ack_sent;
     reply_ack_sent_states[1] := client2.reply_ack_sent;

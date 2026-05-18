@@ -597,8 +597,9 @@ DEFINE
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
-
 VAR
+    client : ClientExtended(request_queue, ack_queue, reply_ack_queue);
+    
     request_prod_toggles : array 0..2 of boolean;
 
     request_cons_toggles : array 0..2 of boolean;
@@ -611,13 +612,13 @@ VAR
 
     reply_ack_cons_toggles : array 0..2 of boolean;
 
-    client  : ClientExtended(request_queue, ack_queue, reply_ack_queue);
     server1 : ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 0);
-    server2 : ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 1);
-    server3 : ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 2);
 
+    server2 : ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 1);
+
+    server3 : ServerExtended(request_queue, ack_queue, reply_ack_queue, client.ack_source, 2);
     request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
-    ack_queue     : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
 
 ASSIGN
@@ -639,6 +640,8 @@ ASSIGN
     reply_ack_cons_toggles[0] := server1.reply_ack_toggle;
     reply_ack_cons_toggles[1] := server2.reply_ack_toggle;
     reply_ack_cons_toggles[2] := server3.reply_ack_toggle;
+
+
 
 
 -- =========================================================
