@@ -1,6 +1,3 @@
--- =========================================================
--- Queue module
--- =========================================================
 MODULE Queue(Q_SIZE, producer_toggle, consumer_toggle)
 VAR
     head : 0..3;
@@ -39,9 +36,7 @@ DEFINE
     empty := (tail = head);
 
 
--- =========================================================
--- Client module
--- =========================================================
+
 MODULE Client(request_queue, ack_queue)
 VAR
     client_request_state : {sending, sent};
@@ -59,8 +54,7 @@ ASSIGN
     init(ack_received) := TRUE;
     init(num_requests_sent) := 0;
 
-    next(client_request_state) :=
-        case
+    next(client_request_state) := case
             client_request_state = sending & request_queue.full : sending;
             client_request_state = sending & !request_queue.full & ack_received : sent;
             client_request_state = sent & !request_queue.full : sending;
@@ -68,8 +62,7 @@ ASSIGN
             TRUE : client_request_state;
         esac;
 
-    next(client_ack_state) :=
-        case
+    next(client_ack_state) := case
             client_ack_state = receiving & ack_queue.empty : receiving;
             client_ack_state = receiving & !ack_queue.empty : received;
             client_ack_state = received & !ack_queue.empty : receiving;
@@ -100,9 +93,6 @@ ASSIGN
 
 
 
--- =========================================================
--- Server module
--- =========================================================
 MODULE Server(request_queue, ack_queue)
 VAR
     server_request_state : {receiving, received};
@@ -158,10 +148,8 @@ ASSIGN
         server_request_state = receiving & !request_queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
         TRUE : num_requests_received;                                                    
     esac;
+    
 
--- =========================================================
--- Nominal wrapper
--- =========================================================
 MODULE Nominal()
 DEFINE
     Q_SIZE := 4;
@@ -172,10 +160,6 @@ VAR
     ack_queue : Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
 
 
-
--- =========================================================
--- Client Extended
--- =========================================================
 MODULE ClientExtended(request_queue, ack_queue)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
@@ -202,8 +186,7 @@ ASSIGN
             TRUE              : fault_mode;
         esac;
 
-    next(client_request_state) :=
-        case
+    next(client_request_state) := case
         fault_mode = stuck_sending : sending;
         fault_mode = stuck_sent : sent;
 
@@ -214,8 +197,7 @@ ASSIGN
             TRUE : client_request_state;
         esac;
 
-    next(client_ack_state) :=
-        case
+    next(client_ack_state) := case
             client_ack_state = receiving & ack_queue.empty : receiving;
             client_ack_state = receiving & !ack_queue.empty : received;
             client_ack_state = received & !ack_queue.empty : receiving;
@@ -225,14 +207,16 @@ ASSIGN
 
     next(request_toggle) := case
         fault_mode = none &
-        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;              
+        client_request_state = sending & !request_queue.full & ack_received : !request_toggle;
         TRUE : request_toggle;                                                      
+    
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
-        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;                   
+        client_ack_state = receiving & !ack_queue.empty : !ack_toggle;
         TRUE : ack_toggle;                                                      
+    
     esac;
 
     next(ack_received) := case
@@ -242,15 +226,13 @@ ASSIGN
     esac;
 
     next(num_requests_sent) := case
-        client_request_state = sending & !request_queue.full & ack_received & num_requests_sent < 100 : num_requests_sent + 1;                   
+        fault_mode = none &
+        client_request_state = sending & !request_queue.full & ack_received & num_requests_sent < 100 : num_requests_sent + 1;
         TRUE : num_requests_sent;                                                    
+    
     esac;
 
 
-
--- =========================================================
--- System wrapper
--- =========================================================
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
@@ -259,8 +241,6 @@ VAR
     server : Server(request_queue, ack_queue);
     request_queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
     ack_queue : Queue(Q_SIZE, server.ack_toggle, client.ack_toggle);
-
-
 
 
 -- =========================================================

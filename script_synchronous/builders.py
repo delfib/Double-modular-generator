@@ -828,6 +828,17 @@ def build_extended_wrapper_RRA(nominal_wrapper_text, target_module, redundancy):
 
     return text
 
+def _build_client_sync_condition(n, queue_name, state_value):
+    return (
+        f"{queue_name}.next_client_turn = client_id &\n"
+        "            (" +
+        " & ".join(
+            f"client_states[{i}] = {state_value}"
+            for i in range(n)
+        ) +
+        ")"
+    )
+
 """ Apply R-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_R_client(text, n):
     text = re.sub(
@@ -836,15 +847,7 @@ def transform_R_client(text, n):
         text
     )
 
-    sync_condition = (
-        "queue.next_client_turn = client_id &\n"
-        "                (" +
-        " & ".join(
-            f"client_states[{i}] = sending"
-            for i in range(n)
-        ) +
-        ")"
-    )
+    sync_condition = _build_client_sync_condition(n,"queue","sending")
 
     text = text.replace(
         'client_state = sending & !queue.full',
@@ -866,34 +869,33 @@ def transform_R_server(text):
 
 """ Apply RR-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_RR_client(text, n):
-    # 1. Add ack_owner + client_id parameters
     text = re.sub(
         r'MODULE\s+ClientExtended\(([^)]*)\)',
-        r'MODULE ClientExtended(\1, ack_owner)',
+        r'MODULE ClientExtended(request_queue, ack_queue, ack_owner, client_id, client_states)',
         text
     )
 
-    # 2. Add request_sent variable
     text = re.sub(
         r'(ack_received\s*:\s*boolean;)',
         r'\1\n    request_sent : boolean;',
         text
     )
-    
-    # 3. Initialize request_sent
+
     text = re.sub(
         r'(init\(ack_received\)\s*:=\s*TRUE;)',
         r'\1\n    init(request_sent) := FALSE;',
         text
     )
 
-    # 4. Inject request_produced guard
+    sync_condition = _build_client_sync_condition(n, "request_queue", "TRUE")
+
+    # 5. Inject synchronization guard
     text = text.replace(
-        '!request_queue.full & ack_received',
-        '!request_queue.full & ack_received & !request_queue.request_produced'
+        'client_request_state = sending & !request_queue.full & ack_received',
+        f'client_request_state = sending & !request_queue.full '
+        f'& ack_received & {sync_condition}'
     )
 
-    # 5. Fix ACK transitions using self_id (safe replace)
     ack_condition = (
         'client_ack_state = receiving & !ack_queue.empty '
         '& request_sent & ack_owner = self_id'
@@ -905,7 +907,7 @@ def transform_RR_client(text, n):
         text
     )
 
-    # 6. Fix ack_toggle transition
+    # 7. Fix ack_toggle transition
     text = re.sub(
         r'(next\(ack_toggle\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: !ack_toggle;)',
         lambda m: m.group(1) + f'        {ack_condition} : !ack_toggle;',
@@ -913,7 +915,7 @@ def transform_RR_client(text, n):
         flags=re.DOTALL
     )
 
-    # 7. Fix ack_received transition
+    # 8. Fix ack_received transition
     text = re.sub(
         r'(next\(ack_received\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: TRUE;)',
         lambda m: m.group(1) + f'        {ack_condition} : TRUE;',
@@ -921,32 +923,28 @@ def transform_RR_client(text, n):
         flags=re.DOTALL
     )
 
-    # 8. Add request_sent transition
     request_sent_block = f"""
     next(request_sent) := case
-        client_request_state = sending & !request_queue.full & ack_received & !request_queue.request_produced : TRUE;
+        fault_mode = none &
+        client_request_state = sending & !request_queue.full & ack_received & {sync_condition} : TRUE;
         {ack_condition} : FALSE;
         TRUE : request_sent;
     esac;
+
     """
 
     text = re.sub(
-        r'(FAIRNESS)',
-        request_sent_block + '\nFAIRNESS',
+        r'(next\(num_requests_sent\)\s*:=\s*case)',
+        request_sent_block + r'\1',
         text
     )
 
-    # 9. Add self_id DEFINE (scalable identity mapping)
-    self_id_def = "DEFINE\n" + _build_self_id_define(n) + "\n"
+    self_id_def = _build_self_id_define(n)
 
-    if 'DEFINE' not in text:
-        text = re.sub(
-            r'(FAIRNESS)',
-            self_id_def + r'\1',
-            text
-        )
+    text += self_id_def
 
     return text
+
 
 """ Apply RRA-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_RRA_client(text, n):
@@ -1100,14 +1098,15 @@ def transform_RRA_server(text, n):
 
 def _build_self_id_define(n):
     cases = '\n'.join(
-        f'            client_id = {i} : clt{i};'
+        f'        client_id = {i} : clt{i};'
         for i in range(n)
     )
+
     return (
-        "    self_id :=\n"
-        "        case\n"
+        "DEFINE\n"
+        "    self_id := case\n"
         f"{cases}\n"
-        "        esac;\n"
+        "    esac;\n"
     )
 
 def build_RR_non_target_server(smv_content, n):
