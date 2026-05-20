@@ -945,6 +945,24 @@ def transform_RR_client(text, n):
 
     return text
 
+""" Apply RR-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
+def transform_RR_server(text):
+    original = (
+        'server_request_state = receiving '
+        '& !request_queue.empty '
+        '& !request_queue.request_consumed'
+    )
+    replacement = (
+        'server_request_state = receiving '
+        '& !request_queue.empty '
+        '& !request_queue.request_consumed '
+        '& request_queue.next_server_turn = server_id'
+    )
+
+    text = text.replace(original, replacement)
+
+    return text
+
 
 """ Apply RRA-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
 def transform_RRA_client(text, n):
