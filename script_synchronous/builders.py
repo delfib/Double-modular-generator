@@ -1051,47 +1051,77 @@ def transform_RRA_client(text, n):
     return text
 
 
-
 """ Apply RRA-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
 def transform_RRA_server(text, n):
-    # 1. Add reply_ack_owner parameter
-    if 'reply_ack_owner' not in text:
-        text = re.sub(
-            r'MODULE\s+ServerExtended\(([^)]*)\)',
-            r'MODULE ServerExtended(\1, reply_ack_owner)',
-            text
-        )
-
-    # 2. Strengthen server_request_state condition
-    text = text.replace(
-        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received',
-        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !request_queue.request_consumed'
+    text = re.sub(
+        r'MODULE\s+ServerExtended\(([^)]*),\s*server_id\)',
+        lambda m:
+            f"MODULE ServerExtended({m.group(1)}, "
+            f"reply_ack_owner, server_id)",
+        text
     )
 
-    # Restrict ALL reply_ack-related guards with ownership (single pass)
+    # Strengthen request receive condition
+    text = text.replace(
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received',
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received '
+        '& !request_queue.request_consumed & request_queue.next_server_turn = server_id'
+    )
+
+    # Add request_toggle synchronization
+    text = text.replace(
+        'server_request_state = received & !request_queue.queue_empty ',
+        'server_request_state = received & !request_queue.queue_empty & request_toggle = request_queue.last_consumer_toggle[server_id] '
+    )
+
+    # Add ack_toggle synchronization
+    text = text.replace(
+        'server_ack_state = sent & !ack_queue.queue_full',
+        'server_ack_state = sent & !ack_queue.queue_full & ack_toggle = ack_queue.last_producer_toggle[server_id]'
+    )
+
+    # Add reply_ack_toggle synchronization
+    text = text.replace(
+        'server_reply_ack_state = received & !reply_ack_queue.queue_empty',
+        'server_reply_ack_state = received & !reply_ack_queue.queue_empty '
+        '& reply_ack_toggle = reply_ack_queue.last_consumer_toggle[server_id]'
+    )
+
+    # Restrict reply_ack reception with ownership
     text = re.sub(
         r'(server_reply_ack_state\s*=\s*receiving\s*&\s*!reply_ack_queue\.queue_empty)(\s*:[^;]*;)',
         r'\1 & reply_ack_owner = self_id\2',
         text
     )
 
-    # 9. Add DEFINE self_id (scales with redundancy)
+    # request_received should only become TRUE in non-faulty mode
+    text = text.replace(
+        'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received '
+        '& !request_queue.request_consumed & request_queue.next_server_turn = server_id : TRUE;',
+        
+        'fault_mode = none &\n'
+        '        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received '
+        '& !request_queue.request_consumed & request_queue.next_server_turn = server_id : TRUE;'
+    )
+    
+    # Add self_id DEFINE
     if 'self_id :=' not in text:
-        lines = ["    self_id := case"]
-        for i in range(n):
-            lines.append(f"        server_id = {i} : srv{i};")
-        lines.append("    esac;")
-
-        define_block = "DEFINE\n" + "\n".join(lines) + "\n"
-
-        text = re.sub(r'(FAIRNESS)', define_block + r'\1', text)
+        text += '\n' + _build_self_id_define(n, 'server')
 
     return text
 
 
-def _build_self_id_define(n):
+def _build_self_id_define(n, role='client'):
+
+    if role == 'client':
+        var_name = 'client_id'
+        prefix = 'clt'
+    else:
+        var_name = 'server_id'
+        prefix = 'srv'
+
     cases = '\n'.join(
-        f'        client_id = {i} : clt{i};'
+        f'        {var_name} = {i} : {prefix}{i};'
         for i in range(n)
     )
 
