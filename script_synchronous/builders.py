@@ -965,117 +965,92 @@ def transform_RR_server(text):
 
 
 """ Apply RRA-specific transformation to ClientExtended when: target = Client and redundancy > 1 """
-def transform_RRA_client(text, n):
+def transform_RRA_client(text, n):    
+    text = re.sub(
+        r'MODULE\s+ClientExtended\(([^)]*),\s*client_id\)',
+        lambda m:
+            f"MODULE ClientExtended({m.group(1)}, "
+            f"ack_owner, client_id, "
+            f"reply_ack_sent_states, pending_reply_ack_states)",
+        text
+    )
 
-    # 1. Add ack_owner parameter 
-    if 'ack_owner' not in text:
-        text = re.sub(
-            r'MODULE\s+ClientExtended\(([^)]*)\)',
-            r'MODULE ClientExtended(\1, ack_owner)',
-            text
-        )
-
-    # 2. Add missing RRA variables 
     text = re.sub(
         r'(ack_received\s*:\s*boolean;)',
         r'\1\n'
-        r'    request_sent : boolean;\n'
-        r'    pending_reply_ack : boolean;\n'
-        r'    reply_ack_consume_marker : boolean;',
+        r'    request_sent : boolean;\n',
         text
     )
-
-    # 3. Initialize missing variables 
     text = re.sub(
         r'(init\(ack_received\)\s*:=\s*FALSE;)',
         r'\1\n'
-        r'    init(request_sent) := FALSE;\n'
-        r'    init(pending_reply_ack) := FALSE;\n'
-        r'    init(reply_ack_consume_marker) := FALSE;',
+        r'    init(request_sent) := FALSE;\n',
         text
     )
 
-    # ------------------------------------------------------------
-    # 4. Strengthen request sending condition 
-    # ------------------------------------------------------------
-    text = text.replace(
-        '!request_queue.queue_full & reply_ack_sent',
-        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced'
+    sync_condition = (
+        "request_queue.next_client_turn = client_id &\n"
+        f"        ({' & '.join(f'pending_reply_ack_states[{i}] = FALSE' for i in range(n))}) &\n"
+        f"        ({' & '.join(f'reply_ack_sent_states[{i}] = TRUE' for i in range(n))})"
     )
 
-    # 5. ACK condition 
+    text = text.replace(
+        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack',
+        '!request_queue.queue_full & reply_ack_sent & !pending_reply_ack & '
+        + sync_condition
+    )
+
     ack_condition = (
         'client_ack_state = receiving & !ack_queue.queue_empty '
         '& request_sent & ack_owner = self_id'
     )
 
-    text = re.sub(
-        r'client_ack_state = receiving & !ack_queue\.queue_empty(?!\s*& request_sent)',
-        ack_condition,
-        text
+    text = text.replace(
+        'client_reply_ack_state = sent & !reply_ack_queue.queue_full',
+        'client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle[client_id]'
     )
 
-    # 6. Fix ack_toggle transition
-    text = re.sub(
-        r'(next\(ack_toggle\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: !ack_toggle;)',
-        lambda m: m.group(1) + f'        {ack_condition} : !ack_toggle;',
-        text,
-        flags=re.DOTALL
-    )
+    text = re.sub(r'client_ack_state = receiving & !ack_queue\.queue_empty(?!\s*& request_sent)', ack_condition, text)
 
-    # 7. Fix ack_received transition
-    text = re.sub(
-        r'(next\(ack_received\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: TRUE;)',
-        lambda m: m.group(1) + f'        {ack_condition} : TRUE;',
-        text,
-        flags=re.DOTALL
-    )
+    # Fix ack_toggle transition
+    text = re.sub(r'(next\(ack_toggle\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: !ack_toggle;)',
+        lambda m: m.group(1) + f'        {ack_condition} : !ack_toggle;', text, flags=re.DOTALL)
 
-    # 8. Add request_sent transition 
-    if 'next(request_sent)' not in text:
-        request_sent_block = f"""
-        next(request_sent) := case
-            client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & !request_queue.request_produced : TRUE;
-            {ack_condition} : FALSE;
-            TRUE : request_sent;
-        esac;
-        """
-
-        text = re.sub(
-            r'(FAIRNESS)',
-            request_sent_block + '\nFAIRNESS',
-            text
-        )
+    # Fix ack_received transition
+    text = re.sub(r'(next\(ack_received\)\s*:=\s*case.*?)(client_ack_state = receiving[^\n]*: TRUE;)',
+        lambda m: m.group(1) + f'        {ack_condition} : TRUE;', text, flags=re.DOTALL)
     
-    # 9. Add pending_reply_ack + consume marker transitions
-    if 'next(pending_reply_ack)' not in text:
-        pending_block = """
-        next(pending_reply_ack) := case
-            client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;
-            pending_reply_ack & (
-                (reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker)
-            ) : FALSE;
-            TRUE : pending_reply_ack;
-        esac;
+    # reply_ack consumption is always through slot 0
+    text = text.replace(
+        'reply_ack_queue.last_consumer_toggle[client_id]',
+        'reply_ack_queue.last_consumer_toggle[0]'
+    )
 
-        next(reply_ack_consume_marker) := case
-            client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : reply_ack_queue.last_consumer_toggle[0];
-            TRUE : reply_ack_consume_marker;
-        esac;
-        """
+    # Add request_sent transition
+    if 'next(request_sent)' not in text:
+        request_sent_block = (
+            "   next(request_sent) := case\n"
+            "        fault_mode = none &\n"
+            f"        client_request_state = sending & !request_queue.queue_full "
+            f"& reply_ack_sent & !pending_reply_ack & {sync_condition} : TRUE;\n"
+            f"        {ack_condition} : FALSE;\n"
+            "        TRUE : request_sent;\n"
+            "    esac;\n\n"
+        )
 
         text = re.sub(
-            r'(FAIRNESS)',
-            pending_block + '\nFAIRNESS',
+            r'([ \t]*next\(pending_reply_ack\)\s*:=\s*case)',
+            request_sent_block + r'\1',
             text
         )
 
-    # 10. Add self_id DEFINE (scalable)
+    # Add self_id DEFINE
     if 'self_id :=' not in text:
-        self_id_def = "DEFINE\n" + _build_self_id_define(n) + "\n"
-        text = re.sub(r'(FAIRNESS)', self_id_def + r'\1', text)
+        text += '\n' + _build_self_id_define(n)
 
     return text
+
+
 
 """ Apply RRA-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
 def transform_RRA_server(text, n):
