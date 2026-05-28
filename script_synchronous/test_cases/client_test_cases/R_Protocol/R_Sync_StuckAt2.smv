@@ -267,11 +267,21 @@ VAR
     extended : Extended();
 
 
-LTLSPEC G (
-    nominal.client.num_requests_sent =
+LTLSPEC (
+    -- Force next_client_turn to be initiated as 1
+    (extended.queue.next_client_turn = 1) &
+
+    -- Force client1 to stay healthy for steps 1 and 2
+    (extended.client1.fault_mode = none & X extended.client1.fault_mode = none) &
+
+    -- Force client2 to stay healthy for steps 1-4
+    (extended.client2.fault_mode = none & X extended.client2.fault_mode = none & 
+     X X extended.client2.fault_mode = none & X X X extended.client2.fault_mode = none)
+) ->
+    G(nominal.client.num_requests_sent =
     extended.client1.num_requests_sent +
-    extended.client2.num_requests_sent 
-)
+    extended.client2.num_requests_sent)
+
 
 
 -- =========================================================

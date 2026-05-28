@@ -162,13 +162,13 @@ VAR
 
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
-    producer_id : array 0..3 of {none, clt0, clt1, clt2};
+    producer_id : array 0..3 of {none, clt0, clt1, clt2, clt3};
     head : 0..3;
     tail : 0..3;
-    last_producer_toggle : array 0..2 of boolean;  -- last toggle value we saw
-    last_consumer_toggle : array 0..2 of boolean;
+    last_producer_toggle : array 0..3 of boolean;  -- last toggle value we saw
+    last_consumer_toggle : array 0..3 of boolean;
 
-    next_client_turn : 0..2;
+    next_client_turn : 0..3;
 
 ASSIGN
     init(head) := 0;
@@ -180,15 +180,18 @@ ASSIGN
         init(last_producer_toggle[0]) := FALSE;
     init(last_producer_toggle[1]) := FALSE;
     init(last_producer_toggle[2]) := FALSE;
+    init(last_producer_toggle[3]) := FALSE;
         init(last_consumer_toggle[0]) := FALSE;
     init(last_consumer_toggle[1]) := FALSE;
     init(last_consumer_toggle[2]) := FALSE;
-    init(next_client_turn) := {0,1,2};
+    init(last_consumer_toggle[3]) := FALSE;
+    init(next_client_turn) := {0,1,2,3};
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
         (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
         (producer_toggles[2] != last_producer_toggle[2]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[3] != last_producer_toggle[3]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
 
@@ -196,6 +199,7 @@ ASSIGN
         tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
         tail = 0 & producer_toggles[2] != last_producer_toggle[2] : clt2;
+        tail = 0 & producer_toggles[3] != last_producer_toggle[3] : clt3;
         TRUE : producer_id[0];
     esac;
 
@@ -203,6 +207,7 @@ ASSIGN
         tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
         tail = 1 & producer_toggles[2] != last_producer_toggle[2] : clt2;
+        tail = 1 & producer_toggles[3] != last_producer_toggle[3] : clt3;
         TRUE : producer_id[1];
     esac;
 
@@ -210,6 +215,7 @@ ASSIGN
         tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
         tail = 2 & producer_toggles[2] != last_producer_toggle[2] : clt2;
+        tail = 2 & producer_toggles[3] != last_producer_toggle[3] : clt3;
         TRUE : producer_id[2];
     esac;
 
@@ -217,6 +223,7 @@ ASSIGN
         tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
         tail = 3 & producer_toggles[2] != last_producer_toggle[2] : clt2;
+        tail = 3 & producer_toggles[3] != last_producer_toggle[3] : clt3;
         TRUE : producer_id[3];
     esac;
 
@@ -224,6 +231,7 @@ ASSIGN
         (consumer_toggles[0] != last_consumer_toggle[0]) : (head + 1) mod Q_SIZE;
         (consumer_toggles[1] != last_consumer_toggle[1]) : (head + 1) mod Q_SIZE;
         (consumer_toggles[2] != last_consumer_toggle[2]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[3] != last_consumer_toggle[3]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
@@ -242,6 +250,11 @@ ASSIGN
         TRUE : last_producer_toggle[2];
     esac;
 
+    next(last_producer_toggle[3]) := case
+        (producer_toggles[3] != last_producer_toggle[3]) : producer_toggles[3];
+        TRUE : last_producer_toggle[3];
+    esac;
+
         next(last_consumer_toggle[0]) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
         TRUE : last_consumer_toggle[0];
@@ -257,10 +270,16 @@ ASSIGN
         TRUE : last_consumer_toggle[2];
     esac;
 
+    next(last_consumer_toggle[3]) := case
+        (consumer_toggles[3] != last_consumer_toggle[3]) : consumer_toggles[3];
+        TRUE : last_consumer_toggle[3];
+    esac;
+
     next(next_client_turn) := case
         next_client_turn = 0 : 1;
         next_client_turn = 1 : 2;
-        next_client_turn = 2 : 0;
+        next_client_turn = 2 : 3;
+        next_client_turn = 3 : 0;
         TRUE : next_client_turn;
     esac;
 
@@ -276,7 +295,7 @@ VAR
     request_toggle : boolean;  
     ack_toggle : boolean;
     request_received : boolean;
-    request_source : {none, clt0, clt1, clt2};
+    request_source : {none, clt0, clt1, clt2, clt3};
     pending_ack : boolean;
     ack_consume_marker : boolean;
     num_requests_received : 0..100;
@@ -296,7 +315,7 @@ ASSIGN
         case
             server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty & !pending_ack : received;
-            server_request_state = received & !request_queue.empty  : receiving;
+            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
@@ -305,7 +324,7 @@ ASSIGN
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full  : sending;
+            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
             server_ack_state = sent & ack_queue.full : sent;
             TRUE : server_ack_state;
         esac;
@@ -336,7 +355,8 @@ ASSIGN
         pending_ack & (
             (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
             (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker) |
-            (request_source = clt2 & ack_queue.last_consumer_toggle[2] != ack_consume_marker)
+            (request_source = clt2 & ack_queue.last_consumer_toggle[2] != ack_consume_marker) |
+            (request_source = clt3 & ack_queue.last_consumer_toggle[3] != ack_consume_marker)
         ) : FALSE;
         TRUE : pending_ack;
     esac;
@@ -346,6 +366,7 @@ ASSIGN
             server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
         server_ack_state = sending & !ack_queue.full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
         server_ack_state = sending & !ack_queue.full & request_received & request_source = clt2 : ack_queue.last_consumer_toggle[2];
+        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt3 : ack_queue.last_consumer_toggle[3];
         TRUE : ack_consume_marker;
     esac;
     
@@ -391,7 +412,7 @@ ASSIGN
 
             client_request_state = sending & request_queue.full : sending;
             client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE) : sent;
+            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE & client_states[3] = TRUE) : sent;
             client_request_state = sent & !request_queue.full : sending;
             client_request_state = sent & request_queue.full : sent;
             TRUE : client_request_state;
@@ -408,7 +429,7 @@ ASSIGN
     next(request_toggle) := case
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE) : !request_toggle;
+            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE & client_states[3] = TRUE) : !request_toggle;
         TRUE : request_toggle;                                                      
     
     esac;
@@ -422,7 +443,7 @@ ASSIGN
 
     next(ack_received) := case
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE) : FALSE;       -- false because a new request has just been sent
+            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE & client_states[3] = TRUE) : FALSE;       -- false because a new request has just been sent
                 client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : TRUE;          -- true because a new ack has been received
         TRUE : ack_received;           
     esac;
@@ -431,7 +452,7 @@ ASSIGN
     next(request_sent) := case
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE) : TRUE;
+            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE & client_states[3] = TRUE) : TRUE;
         client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;
         TRUE : request_sent;
     esac;
@@ -439,7 +460,7 @@ ASSIGN
     next(num_requests_sent) := case
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;
+            (client_states[0] = TRUE & client_states[1] = TRUE & client_states[2] = TRUE & client_states[3] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;
         TRUE : num_requests_sent;                                                    
     
     esac;
@@ -451,6 +472,7 @@ DEFINE
         client_id = 0 : clt0;
         client_id = 1 : clt1;
         client_id = 2 : clt2;
+        client_id = 3 : clt3;
     esac;
 
 
@@ -458,21 +480,23 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    request_prod_toggles : array 0..2 of boolean;
+    request_prod_toggles : array 0..3 of boolean;
 
-    request_cons_toggles : array 0..2 of boolean;
+    request_cons_toggles : array 0..3 of boolean;
 
-    ack_prod_toggles     : array 0..2 of boolean;
+    ack_prod_toggles     : array 0..3 of boolean;
 
-    ack_cons_toggles     : array 0..2 of boolean;
+    ack_cons_toggles     : array 0..3 of boolean;
 
-    client_states : array 0..2 of boolean;
+    client_states : array 0..3 of boolean;
 
     client1 : ClientExtended(request_queue, ack_queue, server.request_source, 0, client_states);
 
     client2 : ClientExtended(request_queue, ack_queue, server.request_source, 1, client_states);
 
     client3 : ClientExtended(request_queue, ack_queue, server.request_source, 2, client_states);
+
+    client4 : ClientExtended(request_queue, ack_queue, server.request_source, 3, client_states);
     server : ServerExtended(request_queue, ack_queue);
     request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
     ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
@@ -481,19 +505,24 @@ ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
     request_prod_toggles[1] := client2.request_toggle;
     request_prod_toggles[2] := client3.request_toggle;
+    request_prod_toggles[3] := client4.request_toggle;
     request_cons_toggles[0] := server.request_toggle;
     request_cons_toggles[1] := FALSE;   -- dummy, stays FALSE forever
     request_cons_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+    request_cons_toggles[3] := FALSE;   -- dummy, stays FALSE forever
     ack_prod_toggles[0] := server.ack_toggle;
     ack_prod_toggles[1] := FALSE;   -- dummy, stays FALSE forever
     ack_prod_toggles[2] := FALSE;   -- dummy, stays FALSE forever
+    ack_prod_toggles[3] := FALSE;   -- dummy, stays FALSE forever
     ack_cons_toggles[0] := client1.ack_toggle;
     ack_cons_toggles[1] := client2.ack_toggle;
     ack_cons_toggles[2] := client3.ack_toggle;
+    ack_cons_toggles[3] := client4.ack_toggle;
 
     client_states[0] := client1.ack_received;
     client_states[1] := client2.ack_received;
     client_states[2] := client3.ack_received;
+    client_states[3] := client4.ack_received;
 
 
 -- =========================================================
@@ -505,32 +534,46 @@ VAR
     extended : Extended();
 
 
-LTLSPEC (
-    -- Force next_client_turn to be initiated as 0 
-    (extended.request_queue.next_client_turn = 2) &
+    LTLSPEC (
+        -- Force next_client_turn to be initiated as 0 
+        (extended.request_queue.next_client_turn = 3) &
 
-    -- Force client1 to stay healthy for steps 1
-    (extended.client1.fault_mode = none) &
+        -- Force client1 to stay healthy for steps 1
+        (extended.client1.fault_mode = none) &
 
-    -- Force client2 to stay healthy for steps 1-7
-    (extended.client2.fault_mode = none & X extended.client2.fault_mode = none & 
-     X X extended.client2.fault_mode = none & X X X extended.client2.fault_mode = none
-     & X X X X extended.client2.fault_mode = none & X X X X X extended.client2.fault_mode = none
-     & X X X X X X extended.client2.fault_mode = none) &
-     
-    -- Force client3 to stay healthy for steps 1-13
-    (extended.client3.fault_mode = none & X extended.client3.fault_mode = none & 
-     X X extended.client3.fault_mode = none & X X X extended.client3.fault_mode = none &
-     X X X X extended.client3.fault_mode = none & X X X X X extended.client3.fault_mode = none
-     & X X X X X X extended.client3.fault_mode = none & X X X X X X X extended.client3.fault_mode = none
-     & X X X X X X X X extended.client3.fault_mode = none & X X X X X X X X X extended.client3.fault_mode = none
-     & X X X X X X X X X X extended.client3.fault_mode = none & X X X X X X X X X X X extended.client3.fault_mode = none
-     & X X X X X X X X X X X X extended.client3.fault_mode = none)
-) ->
-    G(nominal.client.num_requests_sent =
-    extended.client1.num_requests_sent +
-    extended.client2.num_requests_sent + 
-    extended.client3.num_requests_sent)
+        -- Force client2 to stay healthy for steps 1-7
+        (extended.client2.fault_mode = none & X extended.client2.fault_mode = none & 
+        X X extended.client2.fault_mode = none & X X X extended.client2.fault_mode = none
+        & X X X X extended.client2.fault_mode = none & X X X X X extended.client2.fault_mode = none
+        & X X X X X X extended.client2.fault_mode = none) &
+        
+        -- Force client3 to stay healthy for steps 1-13
+        (extended.client3.fault_mode = none & X extended.client3.fault_mode = none & 
+        X X extended.client3.fault_mode = none & X X X extended.client3.fault_mode = none &
+        X X X X extended.client3.fault_mode = none & X X X X X extended.client3.fault_mode = none
+        & X X X X X X extended.client3.fault_mode = none & X X X X X X X extended.client3.fault_mode = none
+        & X X X X X X X X extended.client3.fault_mode = none & X X X X X X X X X extended.client3.fault_mode = none
+        & X X X X X X X X X X extended.client3.fault_mode = none & X X X X X X X X X X X extended.client3.fault_mode = none
+        & X X X X X X X X X X X X extended.client3.fault_mode = none) &
+
+        -- Force client4 to stay healthy for steps 1-19
+        (extended.client4.fault_mode = none & X extended.client4.fault_mode = none & 
+        X X extended.client4.fault_mode = none & X X X extended.client4.fault_mode = none &
+        X X X X extended.client4.fault_mode = none & X X X X X extended.client4.fault_mode = none
+        & X X X X X X extended.client4.fault_mode = none & X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X extended.client4.fault_mode = none & X X X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X X X extended.client4.fault_mode = none & X X X X X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X X X X X extended.client4.fault_mode = none & X X X X X X X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X X X X X X X extended.client4.fault_mode = none & X X X X X X X X X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X X X X X X X X X extended.client4.fault_mode = none & X X X X X X X X X X X X X X X X X extended.client4.fault_mode = none
+        & X X X X X X X X X X X X X X X X X X extended.client4.fault_mode = none)  
+    ) ->
+        G(nominal.client.num_requests_sent =
+        extended.client1.num_requests_sent +
+        extended.client2.num_requests_sent + 
+        extended.client3.num_requests_sent +
+        extended.client4.num_requests_sent)
+
 
 
 -- =========================================================
@@ -539,3 +582,6 @@ LTLSPEC (
 MODULE main
 VAR
     sync : Sync();
+
+
+

@@ -1136,21 +1136,21 @@ def build_RR_non_target_server(smv_content, n):
     """Returns the non targer extended server module"""
     text = get_module_text(smv_content, 'Server')
 
-    # 1. Rename module
+    # Rename module
     text = re.sub(
         r'MODULE\s+Server\s*\(',
         'MODULE ServerExtended(',
         text
     )
 
-    # 2. Index queue toggle accesses → [0]
+    # Index queue toggle accesses → [0]
     text = re.sub(
         r'(\w+\.last_(?:producer|consumer)_toggle)(?!\[)',
         r'\1[0]',
         text
     )
 
-    # 3. Add new VAR fields
+    # Add new VAR fields
     new_vars = (
         "    request_source : {none, " + ", ".join(f"clt{i}" for i in range(n)) + "};\n"
         "    pending_ack : boolean;\n"
@@ -1163,7 +1163,7 @@ def build_RR_non_target_server(smv_content, n):
         text
     )
 
-    # 4. Initialize new vars
+    # Initialize new vars
     init_block = (
         "    init(request_source) := none;\n"
         "    init(pending_ack) := FALSE;\n"
@@ -1176,25 +1176,13 @@ def build_RR_non_target_server(smv_content, n):
         text
     )
 
-    # 5. Strengthen request receive condition
+    # Strengthen request receive condition
     text = text.replace(
         'server_request_state = receiving & !request_queue.empty',
         'server_request_state = receiving & !request_queue.empty & !pending_ack'
     )
 
-    # Add request_toggle synchronization
-    text = text.replace(
-        'server_request_state = received & !request_queue.empty : receiving;',
-        'server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;'
-    )
-
-    # Add ack_toggle synchronization
-    text = text.replace(
-        'server_ack_state = sent & !ack_queue.full : sending;',
-        'server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;'
-    )
-
-    # 6. Add request_source logic
+    # Add request_source logic
     request_source_block = """
     next(request_source) := case
         server_request_state = receiving & !request_queue.empty & !pending_ack : request_queue.producer_id[request_queue.head];
@@ -1202,7 +1190,7 @@ def build_RR_non_target_server(smv_content, n):
     esac;
     """
 
-    # 7. Add pending_ack logic (dynamic over n)
+    # Add pending_ack logic (dynamic over n)
     consume_cases = " |\n            ".join(
         f"(request_source = clt{i} & ack_queue.last_consumer_toggle[{i}] != ack_consume_marker)"
         for i in range(n)
@@ -1218,7 +1206,7 @@ def build_RR_non_target_server(smv_content, n):
     esac;
     """
 
-    # 8. Add ack_consume_marker logic
+    # Add ack_consume_marker logic
     marker_cases = "\n".join(
         f"        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt{i} : ack_queue.last_consumer_toggle[{i}];"
         for i in range(n)
@@ -1231,7 +1219,7 @@ def build_RR_non_target_server(smv_content, n):
     esac;
     """
 
-    # 9. Inject new blocks before next(num_requests_received)
+    # Inject new blocks before next(num_requests_received)
     injection = request_source_block + "\n" + pending_block + "\n" + marker_block + "\n"
 
     text = re.sub(
@@ -1537,7 +1525,7 @@ def build_sync_module(target_module, redundancy, properties=None):
         for prop in properties:
             if prop.comment:
                 lines.append(f"-- {prop.comment}")
-            lines.append(f"SPEC AG {prop.spec}\n")
+            lines.append(f"LTLSPEC G ({prop.spec})\n")
         properties_block = "\n" + "\n".join(lines)
 
     sync = (

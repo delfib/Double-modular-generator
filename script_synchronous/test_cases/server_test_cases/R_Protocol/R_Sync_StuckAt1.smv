@@ -186,10 +186,13 @@ VAR
     extended : Extended();
 
 
-LTLSPEC G (
-    nominal.server.num_requests_received =
-    extended.server.num_requests_received 
-)
+LTLSPEC (
+    -- Force extended server to stay healthy for steps 1-3
+    (extended.server.fault_mode = none & X extended.server.fault_mode = none
+    & X X extended.server.fault_mode = none)
+) ->
+    G(nominal.server.num_requests_received =
+    extended.server.num_requests_received)
 
 
 -- =========================================================

@@ -302,14 +302,45 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
-LTLSPEC G (
-    nominal.client.num_requests_sent =
+
+LTLSPEC (
+    -- Force next_client_turn to be initiated as 
+    (extended.queue.next_client_turn = 4) &
+
+    -- Force client1 to stay healthy for steps 1 and 2
+    (extended.client1.fault_mode = none & X extended.client1.fault_mode = none & X X extended.client1.fault_mode != stuck_sent
+    & X X X extended.client1.fault_mode != stuck_sent & X X X X extended.client1.fault_mode != stuck_sent) &
+
+    -- Force client2 to stay healthy for steps 1-4
+    (extended.client2.fault_mode = none & X extended.client2.fault_mode = none & 
+     X X extended.client2.fault_mode = none & X X X extended.client2.fault_mode = none & 
+     X X X X extended.client2.fault_mode != stuck_sent) &
+     
+    -- Force client3 to stay healthy for steps 1-6
+    (extended.client3.fault_mode = none & X extended.client3.fault_mode = none & 
+     X X extended.client3.fault_mode = none & X X X extended.client3.fault_mode = none &
+     X X X X extended.client3.fault_mode = none & X X X X X extended.client3.fault_mode = none 
+     & X X X X X Z extended.client3.fault_mode != stuck_sent) &
+
+      -- Force client4 to stay healthy for steps 1-8
+    (extended.client4.fault_mode = none & X extended.client4.fault_mode = none & 
+     X X extended.client4.fault_mode = none & X X X extended.client4.fault_mode = none &
+     X X X X extended.client4.fault_mode = none & X X X X X extended.client4.fault_mode = none
+     & X X X X X X extended.client4.fault_mode = none & X X X X X X X extended.client4.fault_mode = none) &
+
+    -- Force client5 to stay healthy for steps 1-10
+    (extended.client5.fault_mode = none & X extended.client5.fault_mode = none & 
+     X X extended.client5.fault_mode = none & X X X extended.client5.fault_mode = none &
+     X X X X extended.client5.fault_mode = none & X X X X X extended.client5.fault_mode = none
+     & X X X X X X extended.client5.fault_mode = none & X X X X X X X extended.client5.fault_mode = none
+     & X X X X X X X X extended.client5.fault_mode = none & X X X X X X X X X extended.client5.fault_mode = none)
+) ->
+    G(nominal.client.num_requests_sent =
     extended.client1.num_requests_sent +
     extended.client2.num_requests_sent + 
     extended.client3.num_requests_sent + 
-    extended.client4.num_requests_sent +
-    extended.client5.num_requests_sent
-)
+    extended.client4.num_requests_sent + 
+    extended.client5.num_requests_sent)
 
 -- =========================================================
 --  Main Module

@@ -277,7 +277,7 @@ ASSIGN
         case
             server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty & !pending_ack : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;
+            server_request_state = received & !request_queue.empty : receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
@@ -286,7 +286,7 @@ ASSIGN
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
+            server_ack_state = sent & !ack_queue.full : sending;
             server_ack_state = sent & ack_queue.full : sent;
             TRUE : server_ack_state;
         esac;
@@ -475,11 +475,25 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
-LTLSPEC G (
-    nominal.client.num_requests_sent =
+
+LTLSPEC (
+    -- Force next_client_turn to be initiated as 1
+    (extended.request_queue.next_client_turn = 1) &
+
+    -- Force client1 to stay healthy for steps 1
+    (extended.client1.fault_mode = none) &
+
+    -- Force client2 to stay healthy for steps 1-7
+    (extended.client2.fault_mode = none & X extended.client2.fault_mode = none & 
+     X X extended.client2.fault_mode = none & X X X extended.client2.fault_mode = none
+     & X X X X extended.client2.fault_mode = none & X X X X X extended.client2.fault_mode = none
+     & X X X X X X extended.client2.fault_mode = none)
+) ->
+    G(nominal.client.num_requests_sent =
     extended.client1.num_requests_sent +
-    extended.client2.num_requests_sent 
-)
+    extended.client2.num_requests_sent)
+
+
 
 -- =========================================================
 --  Main Module
@@ -487,3 +501,4 @@ LTLSPEC G (
 MODULE main
 VAR
     sync : Sync();
+

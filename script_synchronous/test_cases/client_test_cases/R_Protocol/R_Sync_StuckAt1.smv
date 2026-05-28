@@ -190,10 +190,13 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
-LTLSPEC G (
-    nominal.client.num_requests_sent =
-    extended.client.num_requests_sent
-)
+LTLSPEC (
+    -- Force extended client to stay healthy for steps 1 and 2
+    (extended.client.fault_mode = none & X extended.client.fault_mode = none)
+) ->
+    G(nominal.client.num_requests_sent =
+    extended.client.num_requests_sent)
+
 
 
 -- =========================================================

@@ -292,7 +292,6 @@ ASSIGN
     esac;
 
     next(ack_toggle) := case
-        fault_mode = none &
         server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
         TRUE : ack_toggle;                                                    
     
