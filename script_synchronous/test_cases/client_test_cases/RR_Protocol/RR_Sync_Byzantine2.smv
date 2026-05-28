@@ -59,8 +59,7 @@ ASSIGN
     init(ack_received) := TRUE;
     init(num_requests_sent) := 0;
 
-    next(client_request_state) :=
-        case
+    next(client_request_state) := case
             client_request_state = sending & request_queue.full : sending;
             client_request_state = sending & !request_queue.full & ack_received : sent;
             client_request_state = sent & !request_queue.full : sending;
@@ -68,8 +67,7 @@ ASSIGN
             TRUE : client_request_state;
         esac;
 
-    next(client_ack_state) :=
-        case
+    next(client_ack_state) := case
             client_ack_state = receiving & ack_queue.empty : receiving;
             client_ack_state = receiving & !ack_queue.empty : received;
             client_ack_state = received & !ack_queue.empty : receiving;
@@ -267,7 +265,6 @@ DEFINE
 
 
 
-
 -- =========================================================
 -- Server module
 -- =========================================================
@@ -298,7 +295,7 @@ ASSIGN
         case
             server_request_state = receiving & request_queue.empty : receiving;
             server_request_state = receiving & !request_queue.empty & !pending_ack : received;
-            server_request_state = received & !request_queue.empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;
+            server_request_state = received & !request_queue.empty : receiving;
             server_request_state = received & request_queue.empty : received;
             TRUE : server_request_state;
         esac;
@@ -307,7 +304,7 @@ ASSIGN
         case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
-            server_ack_state = sent & !ack_queue.full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
+            server_ack_state = sent & !ack_queue.full : sending;
             server_ack_state = sent & ack_queue.full : sent;
             TRUE : server_ack_state;
         esac;
@@ -355,7 +352,6 @@ ASSIGN
         server_request_state = receiving & !request_queue.empty & !pending_ack & num_requests_received < 100 : num_requests_received + 1;                   
         TRUE : num_requests_received;                                                    
     esac;
-
 
 
 -- =========================================================
@@ -455,6 +451,7 @@ DEFINE
         client_id = 0 : clt0;
         client_id = 1 : clt1;
     esac;
+
 
 -- =========================================================
 -- System wrapper

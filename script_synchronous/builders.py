@@ -1371,7 +1371,7 @@ def build_RRA_non_target_server(smv_content, n):
     """Build the extended non-target Server for RRA protocol."""
     text = get_module_text(smv_content, 'Server')
 
-    # 1. Rename module
+    # Rename module
     text = re.sub(
         r'MODULE\s+Server\s*\(',
         'MODULE ServerExtended(',
@@ -1384,7 +1384,7 @@ def build_RRA_non_target_server(smv_content, n):
         text
     )
 
-    # 3. VAR injection (dynamic clients)
+    # VAR injection (dynamic clients)
     clients = ', '.join(f'clt{i}' for i in range(n))
 
     var_block = (
@@ -1399,7 +1399,7 @@ def build_RRA_non_target_server(smv_content, n):
         text
     )
 
-    # 4. Inject INIT block
+    # Inject INIT block
     text = re.sub(
         r'(init\(ack_toggle\)\s*:=\s*FALSE;)',
         r'\1\n'
@@ -1409,20 +1409,10 @@ def build_RRA_non_target_server(smv_content, n):
         text
     )
 
-    # 5. Strengthen request transition (RRA semantics)
+    # Strengthen request transition (RRA semantics)
     text = text.replace(
         'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received',
         'server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack'
-    )
-
-    text = text.replace(
-        'server_request_state = received & !request_queue.queue_empty : receiving;',
-        'server_request_state = received & !request_queue.queue_empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;'
-    )
-
-    text = text.replace(
-        'server_ack_state = sent & !ack_queue.queue_full : sending;',
-        'server_ack_state = sent & !ack_queue.queue_full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;'
     )
 
     text = text.replace(
@@ -1430,7 +1420,7 @@ def build_RRA_non_target_server(smv_content, n):
         'server_reply_ack_state = received & !reply_ack_queue.queue_empty & reply_ack_toggle = reply_ack_queue.last_consumer_toggle[0] : receiving;'
     )
 
-    # 6. Add new transitions
+    # Add new transitions
     request_source_block = """
     next(request_source) := case
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack :
@@ -1477,6 +1467,7 @@ def build_RRA_non_target_server(smv_content, n):
     )
 
     return text
+
 
 def build_non_target_module(smv_content, protocol, target, n):
     """Returns the extended non-target module when needed and None if no transformation is required."""

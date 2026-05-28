@@ -383,7 +383,7 @@ ASSIGN
     next(server_request_state) := case
         server_request_state = receiving & request_queue.queue_empty : receiving;
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack : received;
-        server_request_state = received & !request_queue.queue_empty & request_toggle = request_queue.last_consumer_toggle[0] : receiving;
+        server_request_state = received & !request_queue.queue_empty : receiving;
         server_request_state = received & request_queue.queue_empty : received;
         TRUE : server_request_state;
     esac;
@@ -391,7 +391,7 @@ ASSIGN
     next(server_ack_state) := case
         server_ack_state = sending & ack_queue.queue_full : sending;
         server_ack_state = sending & !ack_queue.queue_full & request_received : sent;
-        server_ack_state = sent & !ack_queue.queue_full & ack_toggle = ack_queue.last_producer_toggle[0] : sending;
+        server_ack_state = sent & !ack_queue.queue_full : sending;
         server_ack_state = sent & ack_queue.queue_full : sent;
         TRUE : server_ack_state;
     esac;
@@ -691,6 +691,7 @@ LTLSPEC G (
     extended.client2.num_requests_sent +
     extended.client3.num_requests_sent 
 )
+
 
 -- =========================================================
 --  Main Module
