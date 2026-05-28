@@ -131,16 +131,26 @@ class BaseInjector:
             cases = match.group(2)
             new_cases = []
             for line in cases.split('\n'):
-                # Guard only lines that actually perform the toggle
+                # Guard only lines that actually perform the toggle. Skip protection for server ack_toggle and reply_ack_toggle in RR/RRA
+                skip_fault_guard = (
+                    original_name.lower() == 'server'
+                    and toggle_var in ['ack_toggle', 'reply_ack_toggle']
+                )
+
                 if f'!{toggle_var}' in line and ':' in line:
                     parts = line.split(':', 1)
                     condition = parts[0].strip()
                     action = parts[1].strip()
 
-                    new_cases.append(
-                        f"        fault_mode = none &\n"
-                        f"        {condition} : {action}\n"
-                    )
+                    if skip_fault_guard:
+                        new_cases.append(
+                            f"        {condition} : {action}\n"
+                        )
+                    else:
+                        new_cases.append(
+                            f"        fault_mode = none &\n"
+                            f"        {condition} : {action}\n"
+                        )
                 else:
                     new_cases.append(line + '\n')
 

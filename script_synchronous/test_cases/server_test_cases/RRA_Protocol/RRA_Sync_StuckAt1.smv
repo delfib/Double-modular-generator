@@ -310,14 +310,12 @@ ASSIGN
     esac;
 
     next(ack_toggle) := case
-        fault_mode = none &
         server_ack_state = sending & !ack_queue.queue_full & request_received : !ack_toggle;
         TRUE : ack_toggle;
     
     esac;
 
     next(reply_ack_toggle) := case
-        fault_mode = none &
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     
@@ -325,7 +323,6 @@ ASSIGN
 
     next(request_received) := case
         server_ack_state = sending & !ack_queue.queue_full & request_received : FALSE;    -- ack just sent
-        fault_mode = none &
         server_request_state = receiving & !request_queue.queue_empty & reply_ack_received : TRUE;     -- request received
         TRUE : request_received;
     esac;

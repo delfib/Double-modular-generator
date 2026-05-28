@@ -522,14 +522,12 @@ ASSIGN
     esac;
 
     next(ack_toggle) := case
-        fault_mode = none &
         server_ack_state = sending & !ack_queue.queue_full & request_received : !ack_toggle;
         TRUE : ack_toggle;
     
     esac;
 
     next(reply_ack_toggle) := case
-        fault_mode = none &
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & reply_ack_owner = self_id : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     
@@ -627,13 +625,13 @@ VAR
     nominal  : Nominal();
     extended : Extended();
 
+
 LTLSPEC G (
     nominal.server.num_requests_received =
     extended.server1.num_requests_received +
     extended.server2.num_requests_received +
     extended.server3.num_requests_received
 )
-
 
 -- =========================================================
 --  Main Module
