@@ -2,35 +2,10 @@ import sys
 import re
 
 from xml_parser import parse_fault_model
-from smv_utils  import load_smv, save_smv, find_module
+from smv_utils  import get_module_text, strip_main_module, load_smv, save_smv
 from injectors  import create_injector
 from builders   import (build_extended_queue, build_extended_wrapper, build_sync_module, 
                         build_non_target_module, transform_RR_client, transform_RR_server, transform_R_client, transform_R_server, transform_RRA_client, transform_RRA_server)
-
-# ---------------------------------------------------------------------------
-# SMV module helpers
-# ---------------------------------------------------------------------------
-
-def get_module_text(smv_content, module_name):
-    """Extract the full text of a named MODULE from an SMV file."""
-    start, end = find_module(smv_content, module_name)
-    lines = smv_content.splitlines(keepends=True)
-    return ''.join(lines[start:end])
-
-
-def strip_main_module(smv_content):
-    """Remove MODULE main from the nominal SMV content."""
-    result = re.sub(
-        r'\n*--[^\n]*\n--[^\n]*[Mm]ain[^\n]*\n--[^\n]*\nMODULE main.*',
-        '',
-        smv_content,
-        flags=re.DOTALL
-    )
-    if 'MODULE main' in result:
-        result = re.sub(r'\n*MODULE main.*', '', result, flags=re.DOTALL)
-
-    return result.rstrip()
-
 
 # ---------------------------------------------------------------------------
 # Fault injection engine

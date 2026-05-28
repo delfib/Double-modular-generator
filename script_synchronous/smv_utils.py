@@ -1,3 +1,5 @@
+import re
+
 def load_smv(path):
     try:
         with open(path, "r") as f:
