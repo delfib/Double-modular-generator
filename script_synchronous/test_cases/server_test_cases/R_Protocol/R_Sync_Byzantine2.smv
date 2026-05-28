@@ -169,6 +169,7 @@ ASSIGN
     esac;
 
 DEFINE
+    request_consumed := last_server_toggle[0] != server_toggles[0] | last_server_toggle[1] != server_toggles[1];
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
@@ -203,7 +204,7 @@ ASSIGN
         fault_mode = byzantine_server_state : {receiving, received};
 
             server_state = receiving & queue.empty : receiving;
-            server_state = receiving & !queue.empty & queue.next_server_turn = server_id : received;
+            server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : received;
             server_state = received & !queue.empty : receiving;
             server_state = received & queue.empty : received;
             TRUE : server_state;
@@ -211,14 +212,14 @@ ASSIGN
 
     next(request_toggle) := case
         fault_mode = none &
-        server_state = receiving & !queue.empty & queue.next_server_turn = server_id : !request_toggle;
+        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : !request_toggle;
         TRUE : request_toggle;                                                    
     
     esac;
 
     next(num_requests_received) := case
         fault_mode = none &
-        server_state = receiving & !queue.empty & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
+        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
         TRUE : num_requests_received;                                                    
     
     esac;

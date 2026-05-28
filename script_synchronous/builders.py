@@ -142,6 +142,24 @@ def build_extended_queue_R(queue_text, redundancy, target_module):
         text
     )
 
+    # Add request_consumed DEFINE
+    if is_server_target and n > 1:
+        if 'request_consumed' not in text:
+            consumed_def = (
+                '    request_consumed := '
+                + ' | '.join(
+                    f'last_server_toggle[{i}] != server_toggles[{i}]'
+                    for i in range(n)
+                )
+                + ';\n'
+            )
+
+            text = re.sub(
+                r'(DEFINE\s*\n)',
+                r'\1' + consumed_def,
+                text
+            )
+
     return text
 
 def build_extended_queue_RR(queue_text, redundancy, target_module):
@@ -858,7 +876,7 @@ def transform_R_client(text, n):
 
 """ Apply R-specific transformation to ServerExtended when: target = Server and redundancy > 1 """
 def transform_R_server(text):
-    condition = '!queue.empty & queue.next_server_turn = server_id'
+    condition = '!queue.empty & !queue.request_consumed & queue.next_server_turn = server_id'
 
     text = text.replace(
         'server_state = receiving & !queue.empty',
