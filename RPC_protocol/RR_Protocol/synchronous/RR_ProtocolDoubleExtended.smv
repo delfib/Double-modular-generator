@@ -188,3 +188,141 @@ DEFINE
 -- =========================================================
 -- Server Extended
 -- =========================================================
+MODULE ServerExtended(request_queue, ack_queue, server_id)
+VAR
+    fault_mode : {none, stuck_receiving, stuck_received};
+    server_request_state : {receiving, received};
+    server_ack_state : {sending, sent};
+    request_toggle : boolean;
+    ack_toggle : boolean;
+    request_received : boolean;
+    request_source : {none, clt0, clt1};
+    pending_ack : boolean;
+    ack_consume_marker : boolean;
+    num_requests_received : 0..100;
+
+ASSIGN
+    init(fault_mode) := none;
+    init(server_request_state) := receiving;
+    init(server_ack_state) := sending;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(request_received) := FALSE;
+    init(request_source) := none;
+    init(pending_ack) := FALSE;
+    init(ack_consume_marker) := FALSE;
+    init(num_requests_received) := 0;
+
+    next(fault_mode) := case
+        fault_mode = none : {none, stuck_receiving, stuck_received};
+        TRUE              : fault_mode;
+    esac;
+
+    next(server_request_state) := case
+        fault_mode = stuck_receiving : receiving;
+        fault_mode = stuck_received : received;
+
+            server_request_state = receiving & request_queue.empty : receiving;
+            server_request_state = receiving & !request_queue.empty & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : received;
+            server_request_state = received & !request_queue.empty : receiving;
+            server_request_state = received & request_queue.empty : received;
+            TRUE : server_request_state;
+    esac;
+
+    next(server_ack_state) :=  case
+            server_ack_state = sending & ack_queue.full : sending;
+            server_ack_state = sending & !ack_queue.full & request_received : sent;
+            server_ack_state = sent & !ack_queue.full : sending;
+            server_ack_state = sent & ack_queue.full : sent;
+            TRUE : server_ack_state;
+    esac;
+
+    next(request_toggle) := case
+        fault_mode = none &
+        server_request_state = receiving & !request_queue.empty & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : !request_toggle;
+        TRUE : request_toggle;
+    esac;
+
+    next(ack_toggle) := case
+        server_ack_state = sending & !ack_queue.full & request_received : !ack_toggle;
+        TRUE : ack_toggle;
+    esac;
+
+    next(request_received) := case
+        server_ack_state = sending & !ack_queue.full & request_received : FALSE;
+        server_request_state = receiving & !request_queue.empty & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : TRUE;
+        TRUE : request_received;
+    esac;
+
+    next(request_source) := case
+        server_request_state = receiving & !request_queue.empty & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : request_queue.producer_id[request_queue.head];
+        TRUE : request_source;
+    esac;
+
+    next(pending_ack) := case
+        server_ack_state = sending & !ack_queue.full & request_received : TRUE;
+        pending_ack & (
+            (request_source = clt0 & ack_queue.last_consumer_toggle[0] != ack_consume_marker) |
+            (request_source = clt1 & ack_queue.last_consumer_toggle[1] != ack_consume_marker)
+        ) : FALSE;
+        TRUE : pending_ack;
+    esac;
+
+    next(ack_consume_marker) := case
+        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt0 : ack_queue.last_consumer_toggle[0];
+        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt1 : ack_queue.last_consumer_toggle[1];
+        TRUE : ack_consume_marker;
+    esac;
+
+    next(num_requests_received) := case
+        fault_mode = none &
+        server_request_state = receiving & !request_queue.empty & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
+        TRUE : num_requests_received;
+    esac;
+
+
+
+-- =========================================================
+-- Extended Wrapper
+-- =========================================================
+MODULE Extended()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    request_prod_toggles : array 0..1 of boolean;
+    request_cons_toggles : array 0..1 of boolean;
+    ack_prod_toggles : array 0..1 of boolean;
+    ack_cons_toggles : array 0..1 of boolean;
+
+    client_states : array 0..1 of boolean;
+
+    client1 : ClientExtended(request_queue, ack_queue, server1.request_source, 0, client_states);
+    client2 : ClientExtended(request_queue, ack_queue, server2.request_source, 1, client_states);
+
+    server1 : ServerExtended(request_queue, ack_queue, 0);
+    server2 : ServerExtended(request_queue, ack_queue, 1);
+
+    request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
+    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+
+ASSIGN
+    request_prod_toggles[0] := client1.request_toggle;
+    request_prod_toggles[1] := client2.request_toggle;
+    request_cons_toggles[0] := server1.request_toggle;
+    request_cons_toggles[1] := server2.request_toggle;
+    ack_prod_toggles[0] := server1.ack_toggle;
+    ack_prod_toggles[1] := server2.ack_toggle;
+    ack_cons_toggles[0] := client1.ack_toggle;
+    ack_cons_toggles[1] := client2.ack_toggle;
+
+    client_states[0] := client1.ack_received;
+    client_states[1] := client2.ack_received;
+
+
+-- =========================================================
+-- Main module
+-- =========================================================
+MODULE main
+VAR
+    extended : Extended();
+
