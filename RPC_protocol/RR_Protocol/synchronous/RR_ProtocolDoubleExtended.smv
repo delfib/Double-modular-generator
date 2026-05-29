@@ -81,9 +81,8 @@ ASSIGN
         TRUE : last_consumer_toggle[1];
     esac;
 
-    next(next_client_turn) := {0,1}
-
-    next(next_server_turn) := {0,1}
+    next(next_client_turn) := {0,1};
+    next(next_server_turn) := {0,1};
 
 DEFINE
     request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];
@@ -94,16 +93,16 @@ DEFINE
 -- =========================================================
 -- Client Extended
 -- =========================================================
-MODULE ClientExtended(request_queue, ack_queue, ack_owner, client_id, client_states)
+MODULE ClientExtended(request_queue, ack_queue, ack_owners, client_id, client_states)
 VAR
     fault_mode : {none, stuck_sending, stuck_sent};
     client_request_state : {sending, sent};
     client_ack_state  : {receiving, received};
-    request_toggle : boolean;  
-    ack_toggle : boolean;    
+    request_toggle : boolean;
+    ack_toggle : boolean;
     ack_received : boolean;
     request_sent : boolean;
-    num_requests_sent : 0..100;    
+    num_requests_sent : 0..100;
 
 ASSIGN
     init(fault_mode) := none;
@@ -135,38 +134,37 @@ ASSIGN
 
     next(client_ack_state) := case
             client_ack_state = receiving & ack_queue.empty : receiving;
-            client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : received;
+            client_ack_state = receiving & !ack_queue.empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id) : received;
             client_ack_state = received & !ack_queue.empty : receiving;
             client_ack_state = received & ack_queue.empty : received;
             TRUE : client_ack_state;
-        esac;
+    esac;
 
     next(request_toggle) := case
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
             (client_states[0] = TRUE & client_states[1] = TRUE) : !request_toggle;
-        TRUE : request_toggle;                                                      
+        TRUE : request_toggle;
     esac;
 
     next(ack_toggle) := case
         fault_mode = none &
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : !ack_toggle;
-        TRUE : ack_toggle;                                                      
+        client_ack_state = receiving & !ack_queue.empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id) : !ack_toggle;
+        TRUE : ack_toggle;
     esac;
 
     next(ack_received) := case
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
-            (client_states[0] = TRUE & client_states[1] = TRUE) : FALSE;       -- false because a new request has just been sent
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : TRUE;          -- true because a new ack has been received
-        TRUE : ack_received;           
+            (client_states[0] = TRUE & client_states[1] = TRUE) : FALSE;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id) : TRUE;
+        TRUE : ack_received;
     esac;
 
-    
     next(request_sent) := case
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
             (client_states[0] = TRUE & client_states[1] = TRUE) : TRUE;
-        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id) : FALSE;
         TRUE : request_sent;
     esac;
 
@@ -174,8 +172,7 @@ ASSIGN
         fault_mode = none &
         client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
             (client_states[0] = TRUE & client_states[1] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;
-        TRUE : num_requests_sent;                                                    
-    
+        TRUE : num_requests_sent;
     esac;
 
 DEFINE
@@ -229,7 +226,7 @@ ASSIGN
             TRUE : server_request_state;
     esac;
 
-    next(server_ack_state) :=  case
+    next(server_ack_state) := case
             server_ack_state = sending & ack_queue.full : sending;
             server_ack_state = sending & !ack_queue.full & request_received : sent;
             server_ack_state = sent & !ack_queue.full : sending;
@@ -281,7 +278,6 @@ ASSIGN
     esac;
 
 
-
 -- =========================================================
 -- Extended Wrapper
 -- =========================================================
@@ -295,9 +291,10 @@ VAR
     ack_cons_toggles : array 0..1 of boolean;
 
     client_states : array 0..1 of boolean;
+    ack_owners : array 0..1 of {none, clt0, clt1};
 
-    client1 : ClientExtended(request_queue, ack_queue, server1.request_source, 0, client_states);
-    client2 : ClientExtended(request_queue, ack_queue, server2.request_source, 1, client_states);
+    client1 : ClientExtended(request_queue, ack_queue, ack_owners, 0, client_states);
+    client2 : ClientExtended(request_queue, ack_queue, ack_owners, 1, client_states);
 
     server1 : ServerExtended(request_queue, ack_queue, 0);
     server2 : ServerExtended(request_queue, ack_queue, 1);
@@ -317,6 +314,8 @@ ASSIGN
 
     client_states[0] := client1.ack_received;
     client_states[1] := client2.ack_received;
+    ack_owners[0] := server1.request_source;
+    ack_owners[1] := server2.request_source;
 
 
 -- =========================================================
@@ -325,4 +324,3 @@ ASSIGN
 MODULE main
 VAR
     extended : Extended();
-
