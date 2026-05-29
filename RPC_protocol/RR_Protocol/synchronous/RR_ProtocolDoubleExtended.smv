@@ -1,0 +1,190 @@
+-- =========================================================
+-- Queue Extended
+-- =========================================================
+MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
+VAR
+    producer_id : array 0..3 of {none, clt0, clt1};
+    head : 0..3;
+    tail : 0..3;
+    last_producer_toggle : array 0..1 of boolean;
+    last_consumer_toggle : array 0..1 of boolean;
+    next_client_turn : 0..1;
+    next_server_turn : 0..1;
+
+ASSIGN
+    init(head) := 0;
+    init(tail) := 0;
+    init(producer_id[0]) := none;
+    init(producer_id[1]) := none;
+    init(producer_id[2]) := none;
+    init(producer_id[3]) := none;
+    init(last_producer_toggle[0]) := FALSE;
+    init(last_producer_toggle[1]) := FALSE;
+    init(last_consumer_toggle[0]) := FALSE;
+    init(last_consumer_toggle[1]) := FALSE;
+    init(next_client_turn) := {0,1};
+    init(next_server_turn) := {0,1};
+
+    next(tail) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
+        (producer_toggles[1] != last_producer_toggle[1]) : (tail + 1) mod Q_SIZE;
+        TRUE : tail;
+    esac;
+
+    next(producer_id[0]) := case
+        tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[0];
+    esac;
+
+    next(producer_id[1]) := case
+        tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[1];
+    esac;
+
+    next(producer_id[2]) := case
+        tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[2];
+    esac;
+
+    next(producer_id[3]) := case
+        tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
+        tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
+        TRUE : producer_id[3];
+    esac;
+
+    next(head) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : (head + 1) mod Q_SIZE;
+        (consumer_toggles[1] != last_consumer_toggle[1]) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+    next(last_producer_toggle[0]) := case
+        (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
+        TRUE : last_producer_toggle[0];
+    esac;
+
+    next(last_producer_toggle[1]) := case
+        (producer_toggles[1] != last_producer_toggle[1]) : producer_toggles[1];
+        TRUE : last_producer_toggle[1];
+    esac;
+
+    next(last_consumer_toggle[0]) := case
+        (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
+        TRUE : last_consumer_toggle[0];
+    esac;
+
+    next(last_consumer_toggle[1]) := case
+        (consumer_toggles[1] != last_consumer_toggle[1]) : consumer_toggles[1];
+        TRUE : last_consumer_toggle[1];
+    esac;
+
+    next(next_client_turn) := {0,1}
+
+    next(next_server_turn) := {0,1}
+
+DEFINE
+    request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1];
+    full := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+
+-- =========================================================
+-- Client Extended
+-- =========================================================
+MODULE ClientExtended(request_queue, ack_queue, ack_owner, client_id, client_states)
+VAR
+    fault_mode : {none, stuck_sending, stuck_sent};
+    client_request_state : {sending, sent};
+    client_ack_state  : {receiving, received};
+    request_toggle : boolean;  
+    ack_toggle : boolean;    
+    ack_received : boolean;
+    request_sent : boolean;
+    num_requests_sent : 0..100;    
+
+ASSIGN
+    init(fault_mode) := none;
+    init(client_request_state) := sending;
+    init(client_ack_state)  := receiving;
+    init(request_toggle) := FALSE;
+    init(ack_toggle) := FALSE;
+    init(ack_received) := TRUE;
+    init(request_sent) := FALSE;
+    init(num_requests_sent) := 0;
+
+    next(fault_mode) :=
+        case
+            fault_mode = none : {none, stuck_sending, stuck_sent};
+            TRUE              : fault_mode;
+        esac;
+
+    next(client_request_state) := case
+        fault_mode = stuck_sending : sending;
+        fault_mode = stuck_sent : sent;
+
+            client_request_state = sending & request_queue.full : sending;
+            client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
+            (client_states[0] = TRUE & client_states[1] = TRUE) : sent;
+            client_request_state = sent & !request_queue.full : sending;
+            client_request_state = sent & request_queue.full : sent;
+            TRUE : client_request_state;
+        esac;
+
+    next(client_ack_state) := case
+            client_ack_state = receiving & ack_queue.empty : receiving;
+            client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : received;
+            client_ack_state = received & !ack_queue.empty : receiving;
+            client_ack_state = received & ack_queue.empty : received;
+            TRUE : client_ack_state;
+        esac;
+
+    next(request_toggle) := case
+        fault_mode = none &
+        client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
+            (client_states[0] = TRUE & client_states[1] = TRUE) : !request_toggle;
+        TRUE : request_toggle;                                                      
+    esac;
+
+    next(ack_toggle) := case
+        fault_mode = none &
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : !ack_toggle;
+        TRUE : ack_toggle;                                                      
+    esac;
+
+    next(ack_received) := case
+        client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
+            (client_states[0] = TRUE & client_states[1] = TRUE) : FALSE;       -- false because a new request has just been sent
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : TRUE;          -- true because a new ack has been received
+        TRUE : ack_received;           
+    esac;
+
+    
+    next(request_sent) := case
+        fault_mode = none &
+        client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
+            (client_states[0] = TRUE & client_states[1] = TRUE) : TRUE;
+        client_ack_state = receiving & !ack_queue.empty & request_sent & ack_owner = self_id : FALSE;
+        TRUE : request_sent;
+    esac;
+
+    next(num_requests_sent) := case
+        fault_mode = none &
+        client_request_state = sending & !request_queue.full & ack_received & request_queue.next_client_turn = client_id &
+            (client_states[0] = TRUE & client_states[1] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;
+        TRUE : num_requests_sent;                                                    
+    
+    esac;
+
+DEFINE
+    self_id := case
+        client_id = 0 : clt0;
+        client_id = 1 : clt1;
+    esac;
+
+
+-- =========================================================
+-- Server Extended
+-- =========================================================
