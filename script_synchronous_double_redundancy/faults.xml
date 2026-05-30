@@ -5,23 +5,49 @@
 
     <protocol-type>RR</protocol-type>
 
-    <target-module>Server</target-module>
+    <modules>
 
-    <redundancy count="3"/>
+        <module name="Client">
 
-    <faults>
-        <fault id="stuck_receiving">
-            <type>stuck-at</type>
-            <variable>server_request_state</variable>
-            <value>receiving</value>
-        </fault>
+            <redundancy count="3"/>
 
-        <fault id="stuck_received">
-            <type>stuck-at</type>
-            <variable>server_request_state</variable>
-            <value>received</value>
-        </fault>
-    </faults>
+            <faults>
+                <fault id="stuck_sending">
+                    <type>stuck-at</type>
+                    <variable>client_request_state</variable>
+                    <value>sending</value>
+                </fault>
+
+                <fault id="stuck_sent">
+                    <type>stuck-at</type>
+                    <variable>client_request_state</variable>
+                    <value>sent</value>
+                </fault>
+            </faults>
+
+        </module>
+
+        <module name="Server">
+
+            <redundancy count="2"/>
+
+            <faults>
+                <fault id="stuck_receiving">
+                    <type>stuck-at</type>
+                    <variable>server_request_state</variable>
+                    <value>receiving</value>
+                </fault>
+
+                <fault id="stuck_received">
+                    <type>stuck-at</type>
+                    <variable>server_request_state</variable>
+                    <value>received</value>
+                </fault>
+            </faults>
+
+        </module>
+
+    </modules>
 
     <properties>
         <property id="nominal_implies_extended">
@@ -29,8 +55,8 @@
             <spec>
                 nominal.client.num_requests_sent =
                 extended.client1.num_requests_sent +
-                extended.client2.num_requests_sent + 
-                extended.client3.num_requests_sent 
+                extended.client2.num_requests_sent +
+                extended.client3.num_requests_sent
             </spec>
         </property>
     </properties>

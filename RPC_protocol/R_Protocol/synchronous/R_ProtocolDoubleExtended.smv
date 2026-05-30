@@ -67,28 +67,17 @@ DEFINE
 -- =========================================================
 MODULE ClientExtended(queue, client_id, client_states)
 VAR
-    fault_mode : {none, stuck_sending, stuck_sent};
     client_state : {sending, sent};
     request_toggle : boolean;
     num_requests_sent : 0..100;
 
 ASSIGN
-    init(fault_mode) := none;
     init(client_state) := sending;
     init(request_toggle) := FALSE;
     init(num_requests_sent) := 0;
 
-    next(fault_mode) :=
-        case
-            fault_mode = none : {none, stuck_sending, stuck_sent};
-            TRUE              : fault_mode;
-        esac;
-        
     next(client_state) :=
         case
-            fault_mode = stuck_sending : sending;
-            fault_mode = stuck_sent : sent;
-
             client_state = sending & queue.full : sending;
             client_state = sending & !queue.full & queue.next_client_turn = client_id &
                 (client_states[0] = sending & client_states[1] = sending) : sent;
@@ -98,14 +87,12 @@ ASSIGN
         esac;
 
     next(request_toggle) := case
-        fault_mode = none &
         client_state = sending & !queue.full & queue.next_client_turn = client_id &
                 (client_states[0] = sending & client_states[1] = sending) : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(num_requests_sent) := case
-        fault_mode = none &
         client_state = sending & !queue.full & queue.next_client_turn = client_id &
                 (client_states[0] = sending & client_states[1] = sending) & num_requests_sent < 100 : num_requests_sent + 1;
         TRUE : num_requests_sent;
@@ -117,28 +104,17 @@ ASSIGN
 -- =========================================================
 MODULE ServerExtended(queue, server_id)
 VAR
-    fault_mode : {none, stuck_receiving, stuck_received};
     server_state : {receiving, received};
     request_toggle : boolean;
     num_requests_received : 0..100;
 
 ASSIGN
-    init(fault_mode) := none;
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
     init(num_requests_received) := 0;
 
-    next(fault_mode) :=
-        case
-            fault_mode = none : {none, stuck_receiving, stuck_received};
-            TRUE              : fault_mode;
-        esac;
-
     next(server_state) :=
         case
-            fault_mode = stuck_receiving : receiving;
-            fault_mode = stuck_received : received;
-
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : received;
             server_state = received & !queue.empty : receiving;
@@ -147,13 +123,11 @@ ASSIGN
         esac;
 
     next(request_toggle) := case
-        fault_mode = none &
         server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(num_requests_received) := case
-        fault_mode = none &
         server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
         TRUE : num_requests_received;
     esac;
