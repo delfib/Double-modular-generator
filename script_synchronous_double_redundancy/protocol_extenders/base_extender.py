@@ -27,6 +27,10 @@ class BaseExtender(ABC):
     def extend_wrapper(self, text, fault_model):
         pass
 
-    @abstractmethod
     def build_sync_module(self, fault_model):
-        pass
+        return (
+            'MODULE Sync()\n'
+            'VAR\n'
+            '    nominal  : Nominal();\n'
+            '    extended : Extended();'
+        )
