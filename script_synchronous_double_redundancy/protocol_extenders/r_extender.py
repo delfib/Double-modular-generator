@@ -9,16 +9,9 @@ def _array_bound(n):
 def _init_set(n):
     return '{' + ','.join(str(i) for i in range(n)) + '}'
 
-
 class RExtender(BaseExtender):
     def extend_queue(self, text, fault_model):
-        client_cfg = fault_model.modules.get("Client")
-        server_cfg = fault_model.modules.get("Server")
-
-        n_clients = client_cfg.redundancy if client_cfg else 1
-        n_servers = server_cfg.redundancy if server_cfg else 1
-
-        MAX_REDUNDANCY = 10
+        n_clients, n_servers = self._get_redundancy(fault_model)
 
         text = re.sub(
             r'MODULE\s+Queue\s*\(([^,]+),\s*([^,]+),\s*([^)]+)\)',
@@ -112,9 +105,7 @@ class RExtender(BaseExtender):
         return text         
 
 
-    def extend_client(self, text, fault_model):
-        MAX_REDUNDANCY = 10
-
+    def extend_client(self, text):
         text = re.sub(
             r'MODULE\s+Client\s*\(([^)]+)\)',
             r'MODULE ClientExtended(\1, client_id, client_states)', text)
@@ -136,7 +127,7 @@ class RExtender(BaseExtender):
 
         return text
 
-    def extend_server(self, text, fault_model):
+    def extend_server(self, text):
         text = re.sub(
             r'MODULE\s+Server\s*\(([^)]+)\)',
             r'MODULE ServerExtended(\1, server_id)', text)
@@ -149,12 +140,8 @@ class RExtender(BaseExtender):
         return text
 
     def extend_wrapper(self, text, fault_model):
-        client_cfg = fault_model.modules.get("Client")
-        server_cfg = fault_model.modules.get("Server")
-        n_clients = client_cfg.redundancy if client_cfg else 1
-        n_servers = server_cfg.redundancy if server_cfg else 1
+        n_clients, n_servers = self._get_redundancy(fault_model)
 
-        # VAR declarations
         var_arrays = (
             f'    client_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
             f'    server_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
