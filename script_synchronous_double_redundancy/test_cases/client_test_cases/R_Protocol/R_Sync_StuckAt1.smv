@@ -1,0 +1,207 @@
+-- =========================================================
+-- Queue module
+-- =========================================================
+MODULE Queue(Q_SIZE, client_toggle, server_toggle)
+VAR
+    head : 0..3;
+    tail : 0..3;
+    last_client_toggle : boolean;  -- last toggle value we saw
+    last_server_toggle : boolean;
+
+ASSIGN
+    init(head) := 0;
+    init(tail) := 0;
+    init(last_client_toggle) := FALSE;
+    init(last_server_toggle) := FALSE;
+
+    next(tail) := case
+        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
+        TRUE : tail;
+    esac;
+
+    next(head) := case
+        (server_toggle != last_server_toggle) : (head + 1) mod Q_SIZE;
+        TRUE : head;
+    esac;
+
+    next(last_client_toggle) := case
+        (client_toggle != last_client_toggle) : client_toggle;
+        TRUE : last_client_toggle;
+    esac;
+
+    next(last_server_toggle) := case
+        (server_toggle != last_server_toggle) : server_toggle;
+        TRUE : last_server_toggle;
+    esac;
+
+DEFINE
+    full := ((tail + 1) mod Q_SIZE = head);
+    empty := (tail = head);
+
+
+
+-- =========================================================
+-- Client module
+-- =========================================================
+MODULE Client(queue)
+VAR
+    client_state : {sending, sent};
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
+
+ASSIGN
+    init(client_state) := sending;
+    init(request_toggle) := FALSE;
+    init(num_requests_sent) := 0;
+
+    next(client_state) :=
+        case
+            client_state = sending & queue.full : sending;
+            client_state = sending & !queue.full : sent;
+            client_state = sent & !queue.full : sending;
+            client_state = sent & queue.full : sent;
+            TRUE : client_state;
+        esac;
+ 
+    next(request_toggle) := case
+        client_state = sending & !queue.full : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+    next(num_requests_sent) := case
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
+    esac;
+
+
+-- =========================================================
+-- Server module
+-- =========================================================
+MODULE Server(queue)
+VAR
+    server_state : {receiving, received};
+    request_toggle : boolean;  
+    num_requests_received : 0..100;
+ASSIGN
+    init(server_state) := receiving;
+    init(request_toggle) := FALSE;
+    init(num_requests_received) := 0;
+
+    next(server_state) :=
+        case
+            server_state = receiving & queue.empty : receiving;
+            server_state = receiving & !queue.empty : received;
+            server_state = received & !queue.empty : receiving;
+            server_state = received & queue.empty : received;
+            TRUE : server_state;
+        esac;
+
+    next(request_toggle) := case
+        server_state = receiving & !queue.empty : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+    next(num_requests_received) := case
+        server_state = receiving & !queue.empty & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
+    esac;
+
+
+-- =========================================================
+-- Nominal wrapper
+-- =========================================================
+MODULE Nominal()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    client : Client(queue);
+    server : Server(queue);
+    queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+
+
+-- =========================================================
+-- Client Extended
+-- =========================================================
+MODULE ClientExtended(queue)
+VAR
+    fault_mode : {none, stuck_sending, stuck_sent};
+    client_state : {sending, sent};
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
+
+ASSIGN
+    init(fault_mode) := none;
+
+    init(client_state) := sending;
+    init(request_toggle) := FALSE;
+    init(num_requests_sent) := 0;
+
+    next(fault_mode) :=
+        case
+            fault_mode = none : {none, stuck_sending, stuck_sent};
+            TRUE              : fault_mode;
+        esac;
+
+    next(client_state) :=
+        case
+        fault_mode = stuck_sending : sending;
+        fault_mode = stuck_sent : sent;
+
+            client_state = sending & queue.full : sending;
+            client_state = sending & !queue.full : sent;
+            client_state = sent & !queue.full : sending;
+            client_state = sent & queue.full : sent;
+            TRUE : client_state;
+        esac;
+ 
+    next(request_toggle) := case
+        fault_mode = none &
+        client_state = sending & !queue.full : !request_toggle;
+        TRUE : request_toggle;                                                    
+    
+    esac;
+
+    next(num_requests_sent) := case
+        fault_mode = none &
+        client_state = sending & !queue.full & num_requests_sent < 100 : num_requests_sent + 1;
+        TRUE : num_requests_sent;                                                    
+    
+    esac;
+
+
+-- =========================================================
+-- Extended module
+-- =========================================================
+
+
+MODULE Extended()
+DEFINE
+    Q_SIZE := 4;
+VAR
+    client : ClientExtended(queue);
+    server : Server(queue);
+    queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
+
+-- =========================================================
+--  Synchronization Module
+-- =========================================================
+MODULE Sync()
+VAR
+    nominal  : Nominal();
+    extended : Extended();
+
+LTLSPEC (
+    -- Force extended client to stay healthy for steps 1 and 2
+    (extended.client.fault_mode = none & X extended.client.fault_mode = none)
+) ->
+    G(nominal.client.num_requests_sent =
+    extended.client.num_requests_sent)
+
+
+
+-- =========================================================
+--  Main Module
+-- =========================================================
+MODULE main
+VAR
+    sync : Sync();
