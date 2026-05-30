@@ -9,6 +9,7 @@ class Fault:
     def __repr__(self):
         return f"Fault(type={self.type}, variable={self.variable}, value={self.value})"
 
+
 class Property:
     def __init__(self, id, comment, spec):
         self.id = id
@@ -17,6 +18,7 @@ class Property:
 
     def __repr__(self):
         return f"Property(id={self.id})"
+
 
 class ModuleConfig:
     def __init__(self, name, redundancy, faults):
@@ -31,6 +33,7 @@ class ModuleConfig:
             f"redundancy={self.redundancy}, "
             f"faults={self.faults})"
         )
+
 
 class FaultModel:
     def __init__(self, model_file, protocol_type, modules, properties=None):
@@ -57,10 +60,12 @@ def parse_fault_model(xml_path):
     model_file = root.findtext("model")
     if model_file is None:
         raise ValueError("Missing <model> in XML")
+
     model_file = model_file.strip()
 
     # <protocol-type>
     protocol_type = root.findtext("protocol-type")
+
     if protocol_type is None:
         raise ValueError("Missing <protocol-type> in XML")
 
@@ -75,7 +80,7 @@ def parse_fault_model(xml_path):
 
     if modules_elem is None:
         raise ValueError("Missing <modules> section")
-    
+
     for module_elem in modules_elem.findall("module"):
         module_name = module_elem.attrib.get("name")
         if module_name not in ("Client", "Server"):
@@ -115,6 +120,17 @@ def parse_fault_model(xml_path):
                 else:
                     raise ValueError(f"Unknown fault type '{fault_type}' in fault '{fault_id}'")
 
+        # A variable may only have one fault type.
+        variable_fault_types = {}
+        for fault in faults:
+            previous_type = variable_fault_types.get(fault.variable)
+            if previous_type is None:
+                variable_fault_types[fault.variable] = fault.type
+
+            elif previous_type != fault.type:
+                raise ValueError(f"Variable '{fault.variable}' in module '{module_name}' has multiple fault types "
+                    f"('{previous_type}' and '{fault.type}'). Only one fault type per variable is allowed.")
+
         modules[module_name] = ModuleConfig(name=module_name, redundancy=redundancy, faults=faults)
 
     # <properties>
@@ -135,5 +151,5 @@ def parse_fault_model(xml_path):
         model_file=model_file,
         protocol_type=protocol_type,
         modules=modules,
-        properties=properties,
+        properties=properties
     )

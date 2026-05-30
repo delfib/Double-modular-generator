@@ -1,19 +1,18 @@
-from extenders.base_extender import BaseProtocolExtender
+from protocol_extenders.base_extender import BaseExtender
 
+class RRAExtender(BaseExtender):
 
-class RRAExtender(BaseProtocolExtender):
+    def extend_queue(self, text, fault_model):
+        raise NotImplementedError
 
-    def extend_queue(self, queue_text, redundancy):
-        pass
+    def extend_client(self, text, fault_model):
+        raise NotImplementedError
 
-    def extend_client(self, client_text, redundancy):
-        pass
+    def extend_server(self, text, fault_model):
+        raise NotImplementedError
 
-    def extend_server(self, server_text, redundancy):
-        pass
-
-    def extend_wrapper(self, wrapper_text, redundancy):
-        pass
-
-    def build_non_target_module(self, smv_content, redundancy):
-        pass
+    def extend_wrapper(self, text, fault_model):
+        raise NotImplementedError
+    
+    def build_sync_module(self, fault_model):
+        raise NotImplementedError
