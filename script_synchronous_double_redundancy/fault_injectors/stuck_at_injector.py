@@ -32,6 +32,16 @@ class StuckAtInjector(BaseInjector):
             pattern = rf"(next\({target_var}\)\s*:=\s*case\n)"
             module_text = re.sub(pattern, rf"\1{fault_case}\n", module_text)
 
+        # in RRA Server guard the TRUE branch inside next(request_received)
+        if module_name == "Server" and "reply_ack_received" in module_text:
+            pattern = r"(next\(request_received\)\s*:=\s*case\s*\n.*?)(server_request_state\s*=\s*receiving.*?:\s*TRUE;)"
+            module_text = re.sub(
+                pattern, 
+                r"\1fault_mode = none &\n        \2", 
+                module_text, 
+                flags=re.DOTALL
+            )
+
         # Avoid side effects on counters and interface toggles
         potential_side_effects = ["request_toggle", "reply_ack_toggle", "num_requests_sent", "num_requests_received", "request_sent"]
         active_side_effects = [v for v in potential_side_effects if f"next({v})" in module_text]
