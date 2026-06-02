@@ -133,7 +133,7 @@ class BaseExtender(ABC):
         pass
 
     @abstractmethod
-    def extend_wrapper(self, text):
+    def extend_wrapper(self):
         pass
 
     def build_sync_module(self):

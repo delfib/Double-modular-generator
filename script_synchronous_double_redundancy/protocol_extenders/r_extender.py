@@ -7,6 +7,7 @@ class RExtender(BaseExtender):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
         return self._extend_queue_base(text, n_clients, n_servers, 'client', 'server')
 
+
     def extend_client(self, text):
         text = re.sub(
             r'MODULE\s+Client\s*\(([^)]+)\)',
@@ -26,6 +27,7 @@ class RExtender(BaseExtender):
 
         return text
 
+
     def extend_server(self, text):
         text = re.sub(
             r'MODULE\s+Server\s*\(([^)]+)\)',
@@ -38,7 +40,8 @@ class RExtender(BaseExtender):
 
         return text
 
-    def extend_wrapper(self, text):
+
+    def extend_wrapper(self):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
 
         var_arrays = (

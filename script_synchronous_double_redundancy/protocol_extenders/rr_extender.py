@@ -32,6 +32,7 @@ class RRExtender(BaseExtender):
 
         return text
 
+
     def extend_client(self, text):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
 
@@ -97,6 +98,7 @@ class RRExtender(BaseExtender):
         )
 
         return text
+
 
     def extend_server(self, text):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
@@ -164,7 +166,8 @@ class RRExtender(BaseExtender):
 
         return text
 
-    def extend_wrapper(self, text):
+
+    def extend_wrapper(self):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
 
         clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(n_clients)])
