@@ -1,7 +1,6 @@
 from protocol_extenders.extender_factory import create_extender
 from fault_injectors.injector_factory import create_injector
-
-from smv_utils import (get_module_text, strip_main_module)
+from smv_utils import get_module_text, strip_main_module
 
 class ModelGenerator:
     """
@@ -42,16 +41,29 @@ class ModelGenerator:
         server_cfg = self.fault_model.modules.get("Server")
 
         if client_cfg and client_cfg.faults:
-            injector = create_injector(client_cfg.faults)
-            modules["client"] = injector.inject(module_text=modules["client"], module_name="Client", 
-                                                redundancy=client_cfg.redundancy)
-        
+            modules["client"] = self._inject_module_faults(modules["client"], "Client", client_cfg)
+
         if server_cfg and server_cfg.faults:
-            injector = create_injector(server_cfg.faults)
-            modules["server"] = injector.inject(module_text=modules["server"],
-                module_name="Server", redundancy=server_cfg.redundancy)
+            modules["server"] = self._inject_module_faults(modules["server"], "Server", server_cfg)
 
         return modules
+
+
+    def _inject_module_faults(self, module_text, module_name, module_cfg):
+        """
+        Apply all fault injectors required by a module.
+        Faults are grouped by type and each injector is applied once.
+        """
+        fault_groups = {}
+
+        for fault in module_cfg.faults:
+            fault_groups.setdefault(fault.type, []).append(fault)
+
+        for faults in fault_groups.values():
+            injector = create_injector(faults)
+            module_text = injector.inject(module_text=module_text, module_name=module_name, redundancy=module_cfg.redundancy)
+
+        return module_text
 
 
     def _assemble_model(self, original_smv, modules):
@@ -64,7 +76,8 @@ class ModelGenerator:
             modules["client"].rstrip(),
             modules["server"].rstrip(),
             modules["wrapper"].rstrip(),
-            modules["sync"].rstrip()
+            modules["sync"].rstrip(),
+            modules["main"].rstrip()
         ]
 
         return "\n\n\n".join(parts)

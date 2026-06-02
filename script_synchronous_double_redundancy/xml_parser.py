@@ -1,14 +1,14 @@
 import xml.etree.ElementTree as ET
 
 class Fault:
-    def __init__(self, type, variable, value=None):
+    def __init__(self, fault_id, type, variable, value=None):
+        self.fault_id = fault_id  
         self.type = type
         self.variable = variable
         self.value = value
 
     def __repr__(self):
-        return f"Fault(type={self.type}, variable={self.variable}, value={self.value})"
-
+        return f"Fault(id={self.fault_id}, type={self.type}, variable={self.variable}, value={self.value})"
 
 class Property:
     def __init__(self, id, comment, spec):
@@ -111,11 +111,10 @@ def parse_fault_model(xml_path):
                 if fault_type == "stuck-at":
                     if value is None:
                         raise ValueError(f"Stuck-at fault '{fault_id}' requires <value>")
-
-                    faults.append(Fault(fault_type, variable, value.strip()))
+                    faults.append(Fault(fault_id, fault_type, variable, value.strip()))
 
                 elif fault_type == "byzantine":
-                    faults.append(Fault(fault_type, variable, value.strip() if value else None))
+                    faults.append(Fault(fault_id, fault_type, variable, value.strip() if value else None))
 
                 else:
                     raise ValueError(f"Unknown fault type '{fault_type}' in fault '{fault_id}'")
