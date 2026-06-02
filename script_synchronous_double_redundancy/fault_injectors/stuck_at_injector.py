@@ -8,33 +8,29 @@ class StuckAtInjector(BaseInjector):
 
         # Collect all fault configurations 
         fault_ids = [f.fault_id for f in self.faults]
-        fault_enum_str = ", ".join(["none"] + fault_ids)
-
-        module_text = self._add_to_var_block(module_text, f"    fault_mode : {{{fault_enum_str}}};")
-
-        fault_init = "    init(fault_mode) := none;"
-        fault_mode_next = (
-            f"    next(fault_mode) :=\n"
-            f"        case\n"
-            f"            fault_mode = none : {{{fault_enum_str}}};\n"
-            f"            TRUE              : fault_mode;\n"
-            f"        esac;"
-        )
-        module_text = self._add_to_assign_block(module_text, fault_init, fault_mode_next)
+        
+        # Inject the type-specific stuck_at variable tracking
+        module_text = self._add_fault_mode_infrastructure(module_text, fault_ids, "stuck_at")
 
         for fault in self.faults:
             target_var = fault.variable
-            fault_case = f"        fault_mode = {fault.fault_id} : {fault.value};"
+            fault_case = f"        fault_mode_stuck_at = {fault.fault_id} : {fault.value};"
 
             pattern = rf"(next\({target_var}\)\s*:=\s*case\n)"
             module_text = re.sub(pattern, rf"\1{fault_case}\n", module_text)
 
         # in RRA Server guard the TRUE branch inside next(request_received)
         if module_name == "Server" and "reply_ack_received" in module_text:
+            # We check which guards are active to build an accurate guard string
+            guards = ["fault_mode_stuck_at = none"]
+            if "fault_mode_byzantine" in module_text:
+                guards.append("fault_mode_byzantine = none")
+            guard_string = " & ".join(guards) + " &"
+
             pattern = r"(next\(request_received\)\s*:=\s*case\s*\n.*?)(server_request_state\s*=\s*receiving.*?:\s*TRUE;)"
             module_text = re.sub(
                 pattern, 
-                r"\1fault_mode = none &\n        \2", 
+                rf"\1{guard_string}\n        \2", 
                 module_text, 
                 flags=re.DOTALL
             )

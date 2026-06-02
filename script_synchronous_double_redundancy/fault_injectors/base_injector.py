@@ -33,7 +33,45 @@ class BaseInjector(ABC):
         Prefixes functional next() blocks with 'fault_mode = none &' 
         to disable toggles or metrics counters while faulted.
         """
+        # Determine which variables are currently declared in the module
+        declared_guards = []
+        if "fault_mode_stuck_at" in module_text:
+            declared_guards.append("fault_mode_stuck_at = none")
+        if "fault_mode_byzantine" in module_text:
+            declared_guards.append("fault_mode_byzantine = none")
+
         for var in toggle_vars:
-            pattern = rf"(next\({var}\)\s*:=\s*case\n\s*)(\w+)"
-            module_text = re.sub(pattern, r"\1fault_mode = none &\n        \2", module_text)
+            pattern = rf"(next\({var}\)\s*:=\s*case\n)(\s*)([^\n]+)"
+            
+            match = re.search(pattern, module_text)
+            if match:
+                header, indent, first_line = match.groups()
+                
+                # Check which of the declared guards are not already present in this specific block's first line
+                missing_guards = [g for g in declared_guards if g not in first_line]
+                
+                if missing_guards:
+                    # Build a single line guard statement out of the missing variables
+                    guard_string = " & ".join(missing_guards) + " &"
+                    specific_pattern = rf"(next\({var}\)\s*:=\s*case\n\s*)(\w+)"
+                    module_text = re.sub(specific_pattern, rf"\1{guard_string}\n        \2", module_text)
+                    
+        return module_text
+
+    def _add_fault_mode_infrastructure(self, module_text, fault_ids, suffix):
+        """Builds infrastructure for a type-specific fault variable"""
+        var_name = f"fault_mode_{suffix}"
+        fault_enum_str = ", ".join(["none"] + fault_ids)
+        
+        module_text = self._add_to_var_block(module_text, f"    {var_name} : {{{fault_enum_str}}};")
+        
+        fault_init = f"    init({var_name}) := none;"
+        fault_mode_next = (
+            f"    next({var_name}) :=\n"
+            f"        case\n"
+            f"            {var_name} = none : {{{fault_enum_str}}};\n"
+            f"            TRUE              : {var_name};\n"
+            f"        esac;"
+        )
+        module_text = self._add_to_assign_block(module_text, fault_init, fault_mode_next)
         return module_text
