@@ -95,6 +95,19 @@ class BaseExtender(ABC):
         text = re.sub(r'(DEFINE\s*\n)', r'\1' + consumed_def, text)
 
         return text
+    
+    def _assign_array_from_modules(self, array_name, source, field, n, n_max, default_value='FALSE'):
+        active = ''.join(
+            f'    {array_name}[{i}] := {source}{i + 1}.{field};\n'
+            for i in range(n)
+        )
+
+        padding = ''.join(
+            f'    {array_name}[{i}] := {default_value};\n'
+            for i in range(n, n_max)
+        )
+
+        return active + padding
 
     def extend(self, modules, fault_model):
         self._fault_model = fault_model

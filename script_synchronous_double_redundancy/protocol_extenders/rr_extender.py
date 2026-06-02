@@ -165,4 +165,59 @@ class RRExtender(BaseExtender):
         return text
 
     def extend_wrapper(self, text):
-        return text
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
+
+        clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(n_clients)])
+
+        var_arrays = (
+            f'    request_prod_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
+            f'    request_cons_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
+            f'    ack_prod_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
+            f'    ack_cons_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n\n'
+            f'    client_states : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
+            f'    ack_owners : array 0..{MAX_REDUNDANCY - 1} of {{{clt_enum}}};\n'
+        )
+
+        var_clients = ''.join(
+            f'    client{i + 1} : ClientExtended(request_queue, ack_queue, ack_owners, {i}, client_states);\n'
+            for i in range(n_clients)
+        )
+
+        var_servers = ''.join(
+            f'    server{i + 1} : ServerExtended(request_queue, ack_queue, {i});\n'
+            for i in range(n_servers)
+        )
+
+        var_queues = (
+            f'    request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);\n'
+            f'    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);\n'
+        )
+
+        assign_sections = (
+            self._assign_array_from_modules('request_prod_toggles', 'client', 'request_toggle', n_clients, MAX_REDUNDANCY)
+            + self._assign_array_from_modules('request_cons_toggles', 'server', 'request_toggle', n_servers, MAX_REDUNDANCY)
+            + self._assign_array_from_modules('ack_prod_toggles', 'server', 'ack_toggle', n_servers, MAX_REDUNDANCY)
+            + self._assign_array_from_modules('ack_cons_toggles', 'client', 'ack_toggle', n_clients, MAX_REDUNDANCY)
+            + self._assign_array_from_modules('client_states', 'client', 'ack_received', n_clients, MAX_REDUNDANCY, 'TRUE')
+            + ''.join(
+                f'    ack_owners[{i}] := server{i + 1}.request_source;\n'
+                for i in range(n_servers)
+            )
+            + ''.join(
+                f'    ack_owners[{i}] := none;\n'
+                for i in range(n_servers, MAX_REDUNDANCY)
+            )
+        )
+
+        return (
+            f'MODULE Extended()\n'
+            f'DEFINE\n'
+            f'    Q_SIZE := 4;\n'
+            f'VAR\n'
+            f'{var_arrays}'
+            f'{var_clients}'
+            f'{var_servers}'
+            f'{var_queues}'
+            f'ASSIGN\n'
+            f'{assign_sections}'
+        )

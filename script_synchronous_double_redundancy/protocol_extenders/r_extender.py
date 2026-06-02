@@ -46,38 +46,25 @@ class RExtender(BaseExtender):
             f'    server_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
             f'    client_states : array 0..{MAX_REDUNDANCY - 1} of {{sending, sent}};\n'
         )
+
         var_clients = ''.join(
             f'    client{i + 1} : ClientExtended(queue, {i}, client_states);\n'
             for i in range(n_clients)
         )
+
         var_servers = ''.join(
             f'    server{i + 1} : ServerExtended(queue, {i});\n'
             for i in range(n_servers)
         )
 
-        assign_client_toggles = ''.join(
-            f'    client_toggles[{i}] := client{i + 1}.request_toggle;\n'
-            for i in range(n_clients)
-        ) + ''.join(
-            f'    client_toggles[{i}] := FALSE;\n'
-            for i in range(n_clients, MAX_REDUNDANCY)
-        )
+        assign_client_toggles = self._assign_array_from_modules('client_toggles', 'client',
+            'request_toggle', n_clients, MAX_REDUNDANCY)
 
-        assign_server_toggles = ''.join(
-            f'    server_toggles[{i}] := server{i + 1}.request_toggle;\n'
-            for i in range(n_servers)
-        ) + ''.join(
-            f'    server_toggles[{i}] := FALSE;\n'
-            for i in range(n_servers, MAX_REDUNDANCY)
-        )
+        assign_server_toggles = self._assign_array_from_modules('server_toggles', 'server',
+            'request_toggle', n_servers, MAX_REDUNDANCY)
 
-        assign_client_states = ''.join(
-            f'    client_states[{i}] := client{i + 1}.client_state;\n'
-            for i in range(n_clients)
-        ) + ''.join(
-            f'    client_states[{i}] := sending;\n'
-            for i in range(n_clients, MAX_REDUNDANCY)
-        )
+        assign_client_states = self._assign_array_from_modules('client_states', 'client',
+            'client_state', n_clients, MAX_REDUNDANCY, 'sending')
 
         return (
             f'MODULE Extended()\n'
