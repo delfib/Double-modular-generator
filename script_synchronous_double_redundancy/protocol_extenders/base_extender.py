@@ -18,6 +18,7 @@ class BaseExtender(ABC):
         n_servers = server_cfg.redundancy if server_cfg else 1
         return n_clients, n_servers
 
+
     def _extend_queue_base(self, text, n_producers, n_consumers, producer_name, consumer_name):
         """Shared queue extension logic for all protocols."""
         prod, cons = producer_name, consumer_name
@@ -96,6 +97,32 @@ class BaseExtender(ABC):
 
         return text
     
+
+    def _extend_queue_with_producer_id(self, text, n_clients, n_servers):
+        text = self._extend_queue_base(text, n_clients, n_servers, 'producer', 'consumer')
+
+        producer_id_enum = ', '.join(['none'] + [f'clt{i}' for i in range(MAX_REDUNDANCY)])
+        text = re.sub(
+            r'(VAR\n)',
+            f'\\1    producer_id : array 0..3 of {{{producer_id_enum}}};\n', text)
+
+        producer_id_inits = '\n'.join(f'    init(producer_id[{i}]) := none;' for i in range(4))
+        text = re.sub(r'(    init\(last_producer_toggle\[0\]\) := FALSE;)', producer_id_inits + r'\n    \1', text)
+
+        producer_id_nexts = '\n'.join(
+            '    next(producer_id[{slot}]) := case\n'.format(slot=slot)
+            + '\n'.join(
+                f'        tail = {slot} & producer_toggles[{i}] != last_producer_toggle[{i}] : clt{i};'
+                for i in range(MAX_REDUNDANCY)
+            )
+            + f'\n        TRUE : producer_id[{slot}];\n    esac;'
+            for slot in range(4))
+
+        text = re.sub(r'(next\(tail\)\s*:=\s*case.*?esac;)', r'\1\n' + producer_id_nexts, text, flags=re.DOTALL)
+
+        return text
+
+
     def _assign_array_from_modules(self, array_name, source, field, n, n_max, default_value='FALSE'):
         active = ''.join(
             f'    {array_name}[{i}] := {source}{i + 1}.{field};\n'
@@ -109,12 +136,13 @@ class BaseExtender(ABC):
 
         return active + padding
 
+
     def extend(self, modules, fault_model):
         self._fault_model = fault_model
         modules["queue"] = self.extend_queue(modules["queue"])
         modules["client"] = self.extend_client(modules["client"])
         modules["server"] = self.extend_server(modules["server"])
-        modules["wrapper"] = self.extend_wrapper(modules["wrapper"])
+        modules["wrapper"] = self.extend_wrapper()
         modules["sync"] = self.build_sync_module()
         modules["main"] = self.build_main_module()
         
