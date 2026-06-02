@@ -10,10 +10,7 @@ class StuckAtInjector(BaseInjector):
         fault_ids = [f.fault_id for f in self.faults]
         fault_enum_str = ", ".join(["none"] + fault_ids)
 
-        module_text = self._add_to_var_block(
-            module_text, 
-            f"    fault_mode : {{{fault_enum_str}}};"
-        )
+        module_text = self._add_to_var_block(module_text, f"    fault_mode : {{{fault_enum_str}}};")
 
         fault_init = "    init(fault_mode) := none;"
         fault_mode_next = (
