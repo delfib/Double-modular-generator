@@ -97,17 +97,18 @@ class BaseExtender(ABC):
         return text
 
     def extend(self, modules, fault_model):
-        modules["queue"] = self.extend_queue(modules["queue"], fault_model)
+        self._fault_model = fault_model
+        modules["queue"] = self.extend_queue(modules["queue"])
         modules["client"] = self.extend_client(modules["client"])
         modules["server"] = self.extend_server(modules["server"])
-        modules["wrapper"] = self.extend_wrapper(modules["wrapper"], fault_model)
+        modules["wrapper"] = self.extend_wrapper(modules["wrapper"])
         modules["sync"] = self.build_sync_module()
         modules["main"] = self.build_main_module()
         
         return modules
 
     @abstractmethod
-    def extend_queue(self, text, fault_model):
+    def extend_queue(self, text):
         pass
 
     @abstractmethod
@@ -119,7 +120,7 @@ class BaseExtender(ABC):
         pass
 
     @abstractmethod
-    def extend_wrapper(self, text, fault_model):
+    def extend_wrapper(self, text):
         pass
 
     def build_sync_module(self):

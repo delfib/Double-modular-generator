@@ -3,8 +3,8 @@ from protocol_extenders.base_extender import BaseExtender, MAX_REDUNDANCY
 
 class RRExtender(BaseExtender):
 
-    def extend_queue(self, text, fault_model):
-        n_clients, n_servers = self._get_redundancy(fault_model)
+    def extend_queue(self, text):
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
         text = self._extend_queue_base(text, n_clients, n_servers, 'producer', 'consumer')
 
         # Add producer_id VAR (insert after 'VAR\n')
@@ -33,10 +33,136 @@ class RRExtender(BaseExtender):
         return text
 
     def extend_client(self, text):
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
+
+        text = re.sub(
+            r'MODULE\s+Client\s*\(([^)]+)\)',
+            r'MODULE ClientExtended(\1, ack_owners, client_id, client_states)',
+            text
+        )
+        
+        text = text.replace(
+            '    ack_received : boolean;',
+            '    ack_received : boolean;\n    request_sent : boolean;'
+        )
+        text = text.replace(
+            '    init(ack_received) := TRUE;',
+            '    init(ack_received) := TRUE;\n    init(request_sent) := FALSE;'
+        )
+
+        # Build guards
+        all_ready = ' & '.join(f'client_states[{i}] = TRUE' for i in range(n_clients))
+        turn_guard = (
+            f' & request_queue.next_client_turn = client_id &\n'
+            f'            ({all_ready})'
+        )
+        ack_owners_guard = (
+            '(' + ' | '.join(f'ack_owners[{i}] = self_id' for i in range(n_servers)) + ')'
+        )
+
+        # Extend the sending condition 
+        text = text.replace(
+            'client_request_state = sending & !request_queue.full & ack_received',
+            f'client_request_state = sending & !request_queue.full & ack_received{turn_guard}',
+        )
+
+        # Extend the ack condition
+        text = text.replace(
+            'client_ack_state = receiving & !ack_queue.empty',
+            f'client_ack_state = receiving & !ack_queue.empty & request_sent & {ack_owners_guard}',
+        )
+
+        # Add next(request_sent) block before next(num_requests_sent)
+        request_sent_block = (
+            f'    next(request_sent) := case\n'
+            f'        client_request_state = sending & !request_queue.full & ack_received{turn_guard} : TRUE;\n'
+            f'        client_ack_state = receiving & !ack_queue.empty & request_sent & {ack_owners_guard} : FALSE;\n'
+            f'        TRUE : request_sent;\n'
+            f'    esac;\n'
+        )
+        text = text.replace(
+            '    next(num_requests_sent)',
+            request_sent_block + '    next(num_requests_sent)'
+        )
+
+        # Add DEFINE self_id block
+        self_id_cases = '\n'.join(
+            f'        client_id = {i} : clt{i};' for i in range(MAX_REDUNDANCY)
+        )
+        text = text.rstrip() + (
+            f'\nDEFINE\n'
+            f'    self_id := case\n'
+            f'{self_id_cases}\n'
+            f'    esac;'
+        )
+
         return text
 
     def extend_server(self, text):
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
+
+        text = re.sub(
+            r'MODULE\s+Server\s*\(([^)]+)\)',
+            r'MODULE ServerExtended(\1, server_id)', text)
+
+        # Add new VARs
+        text = text.replace(
+            '    request_received : boolean;',
+            '    request_received : boolean;\n'
+            '    request_source : {' + ', '.join(['none'] + [f'clt{i}' for i in range(MAX_REDUNDANCY)]) + '};\n'
+            '    pending_ack : boolean;\n'
+            '    ack_consume_marker : boolean;'
+        )
+
+        # Add new inits
+        text = text.replace(
+            '    init(request_received) := FALSE;',
+            '    init(request_received) := FALSE;\n'
+            '    init(request_source) := none;\n'
+            '    init(pending_ack) := FALSE;\n'
+            '    init(ack_consume_marker) := FALSE;'
+        )
+
+        # Extend the receiving condition 
+        rr_guard = '& !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id'
+        text = text.replace(
+            'server_request_state = receiving & !request_queue.empty',
+            f'server_request_state = receiving & !request_queue.empty {rr_guard}',
+        )
+
+        # Add next(request_source), next(pending_ack), next(ack_consume_marker)
+        pending_ack_cases = ' |\n'.join(
+            f'            (request_source = clt{i} & ack_queue.last_consumer_toggle[{i}] != ack_consume_marker)'
+            for i in range(n_clients)
+        )
+        ack_consume_cases = '\n'.join(
+            f'        server_ack_state = sending & !ack_queue.full & request_received & request_source = clt{i} : ack_queue.last_consumer_toggle[{i}];'
+            for i in range(n_clients)
+        )
+
+        new_blocks = (
+            f'    next(request_source) := case\n'
+            f'        server_request_state = receiving & !request_queue.empty {rr_guard} : request_queue.producer_id[request_queue.head];\n'
+            f'        TRUE : request_source;\n'
+            f'    esac;\n\n'
+            f'    next(pending_ack) := case\n'
+            f'        server_ack_state = sending & !ack_queue.full & request_received : TRUE;\n'
+            f'        pending_ack & (\n'
+            f'{pending_ack_cases}\n'
+            f'        ) : FALSE;\n'
+            f'        TRUE : pending_ack;\n'
+            f'    esac;\n\n'
+            f'    next(ack_consume_marker) := case\n'
+            f'{ack_consume_cases}\n'
+            f'        TRUE : ack_consume_marker;\n'
+            f'    esac;\n\n'
+        )
+        text = text.replace(
+            '    next(num_requests_received)',
+            new_blocks + '    next(num_requests_received)'
+        )
+
         return text
 
-    def extend_wrapper(self, text, fault_model):
+    def extend_wrapper(self, text):
         return text

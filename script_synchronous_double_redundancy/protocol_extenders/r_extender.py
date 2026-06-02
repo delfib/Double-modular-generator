@@ -3,8 +3,8 @@ from protocol_extenders.base_extender import BaseExtender, MAX_REDUNDANCY
 
 class RExtender(BaseExtender):
 
-    def extend_queue(self, text, fault_model):
-        n_clients, n_servers = self._get_redundancy(fault_model)
+    def extend_queue(self, text):
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
         return self._extend_queue_base(text, n_clients, n_servers, 'client', 'server')
 
     def extend_client(self, text):
@@ -38,8 +38,8 @@ class RExtender(BaseExtender):
 
         return text
 
-    def extend_wrapper(self, text, fault_model):
-        n_clients, n_servers = self._get_redundancy(fault_model)
+    def extend_wrapper(self, text):
+        n_clients, n_servers = self._get_redundancy(self._fault_model)
 
         var_arrays = (
             f'    client_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
