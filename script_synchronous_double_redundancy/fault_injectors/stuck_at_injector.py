@@ -37,6 +37,11 @@ class StuckAtInjector(BaseInjector):
 
         # Avoid side effects on counters and interface toggles
         potential_side_effects = ["request_toggle", "reply_ack_toggle", "num_requests_sent", "num_requests_received", "request_sent"]
+        
+        # Remove variables that are explicitly being targeted by faults in this injector pass
+        fault_targets = [f.variable for f in self.faults]
+        potential_side_effects = [v for v in potential_side_effects if v not in fault_targets]
+        
         active_side_effects = [v for v in potential_side_effects if f"next({v})" in module_text]
         
         module_text = self._suppress_side_effects(module_text, active_side_effects)
