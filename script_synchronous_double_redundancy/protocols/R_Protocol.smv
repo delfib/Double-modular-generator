@@ -5,7 +5,7 @@ MODULE Queue(Q_SIZE, client_toggle, server_toggle)
 VAR
     head : 0..3;
     tail : 0..3;
-    last_client_toggle : boolean;  -- last toggle value we saw
+    last_client_toggle : boolean;
     last_server_toggle : boolean;
 
 ASSIGN
@@ -15,7 +15,7 @@ ASSIGN
     init(last_server_toggle) := FALSE;
 
     next(tail) := case
-        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
+        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE; 
         TRUE : tail;
     esac;
 

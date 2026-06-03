@@ -92,6 +92,12 @@ def parse_fault_model(xml_path):
         if redundancy_elem is not None:
             redundancy = int(redundancy_elem.attrib.get("count", "1"))
 
+        if redundancy < 1:
+            raise ValueError(
+                f"Module '{module_name}' has invalid redundancy count '{redundancy}'. "
+                f"Redundancy must be 1 or greater than 1."
+            )
+
         faults = []
         faults_elem = module_elem.find("faults")
 
