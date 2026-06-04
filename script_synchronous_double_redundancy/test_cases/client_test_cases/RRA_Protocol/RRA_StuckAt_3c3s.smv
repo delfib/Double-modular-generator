@@ -238,9 +238,6 @@ VAR
     reply_ack_queue : Queue(Q_SIZE, client.reply_ack_toggle, server.reply_ack_toggle);
 
 
--- =========================================================
--- Queue Extended
--- =========================================================
 MODULE QueueExtended(Q_SIZE, producer_toggles, consumer_toggles)
 VAR
     producer_id : array 0..3 of {none, clt0, clt1, clt2, clt3, clt4, clt5, clt6, clt7, clt8, clt9};
@@ -249,13 +246,13 @@ VAR
     last_producer_toggle : array 0..9 of boolean;
     last_consumer_toggle : array 0..9 of boolean;
 
-    next_client_turn : 0..9;
-    next_server_turn : 0..9;
+    next_producer_turn : 0..9;
+    next_consumer_turn : 0..9;
 
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
-    init(producer_id[0]) := none;
+        init(producer_id[0]) := none;
     init(producer_id[1]) := none;
     init(producer_id[2]) := none;
     init(producer_id[3]) := none;
@@ -279,8 +276,8 @@ ASSIGN
     init(last_consumer_toggle[7]) := FALSE;
     init(last_consumer_toggle[8]) := FALSE;
     init(last_consumer_toggle[9]) := FALSE;
-    init(next_client_turn) := {0,1,2};
-    init(next_server_turn) := {0,1,2};
+    init(next_producer_turn) := {0,1,2};
+    init(next_consumer_turn) := {0,1,2};
 
     next(tail) := case
         (producer_toggles[0] != last_producer_toggle[0]) : (tail + 1) mod Q_SIZE;
@@ -295,7 +292,6 @@ ASSIGN
         (producer_toggles[9] != last_producer_toggle[9]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
-
     next(producer_id[0]) := case
         tail = 0 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 0 & producer_toggles[1] != last_producer_toggle[1] : clt1;
@@ -309,7 +305,6 @@ ASSIGN
         tail = 0 & producer_toggles[9] != last_producer_toggle[9] : clt9;
         TRUE : producer_id[0];
     esac;
-
     next(producer_id[1]) := case
         tail = 1 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 1 & producer_toggles[1] != last_producer_toggle[1] : clt1;
@@ -323,7 +318,6 @@ ASSIGN
         tail = 1 & producer_toggles[9] != last_producer_toggle[9] : clt9;
         TRUE : producer_id[1];
     esac;
-
     next(producer_id[2]) := case
         tail = 2 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 2 & producer_toggles[1] != last_producer_toggle[1] : clt1;
@@ -337,7 +331,6 @@ ASSIGN
         tail = 2 & producer_toggles[9] != last_producer_toggle[9] : clt9;
         TRUE : producer_id[2];
     esac;
-
     next(producer_id[3]) := case
         tail = 3 & producer_toggles[0] != last_producer_toggle[0] : clt0;
         tail = 3 & producer_toggles[1] != last_producer_toggle[1] : clt1;
@@ -366,7 +359,7 @@ ASSIGN
         TRUE : head;
     esac;
 
-    next(last_producer_toggle[0]) := case
+        next(last_producer_toggle[0]) := case
         (producer_toggles[0] != last_producer_toggle[0]) : producer_toggles[0];
         TRUE : last_producer_toggle[0];
     esac;
@@ -416,7 +409,7 @@ ASSIGN
         TRUE : last_producer_toggle[9];
     esac;
 
-    next(last_consumer_toggle[0]) := case
+        next(last_consumer_toggle[0]) := case
         (consumer_toggles[0] != last_consumer_toggle[0]) : consumer_toggles[0];
         TRUE : last_consumer_toggle[0];
     esac;
@@ -466,21 +459,19 @@ ASSIGN
         TRUE : last_consumer_toggle[9];
     esac;
 
-    next(next_client_turn) := {0,1,2};
+    next(next_producer_turn) := {0,1,2};
 
-    next(next_server_turn) := {0,1,2};
+    next(next_consumer_turn) := {0,1,2};
 
 DEFINE
     request_consumed := last_consumer_toggle[0] != consumer_toggles[0] | last_consumer_toggle[1] != consumer_toggles[1] | last_consumer_toggle[2] != consumer_toggles[2] | last_consumer_toggle[3] != consumer_toggles[3] | last_consumer_toggle[4] != consumer_toggles[4] | last_consumer_toggle[5] != consumer_toggles[5] | last_consumer_toggle[6] != consumer_toggles[6] | last_consumer_toggle[7] != consumer_toggles[7] | last_consumer_toggle[8] != consumer_toggles[8] | last_consumer_toggle[9] != consumer_toggles[9];
     queue_full := ((tail + 1) mod Q_SIZE = head);
     queue_empty := (tail = head);
 
--- =========================================================
--- Client Extended
--- =========================================================
+
 MODULE ClientExtended(request_queue, ack_queue, reply_ack_queue, ack_owners, client_id, reply_ack_sent_states, pending_reply_ack_states)
 VAR
-    fault_mode : {none, stuck_sending, stuck_sent};
+    fault_mode_stuck_at : {none, stuck_sending, stuck_sent};
     client_request_state    : {sending, sent};
     client_ack_state        : {receiving, received};
     client_reply_ack_state  : {sending, sent};          
@@ -491,18 +482,24 @@ VAR
 
     ack_received            : boolean;
     request_sent            : boolean;
-    ack_source              : {none, srv0, srv1};
+    ack_source              : {none, srv0, srv1, srv2, srv3, srv4, srv5, srv6, srv7, srv8, srv9};
     client_ack_srv0_seen    : boolean;
     client_ack_srv1_seen    : boolean;
     client_ack_srv2_seen    : boolean;
+    client_ack_srv3_seen    : boolean;
+    client_ack_srv4_seen    : boolean;
+    client_ack_srv5_seen    : boolean;
+    client_ack_srv6_seen    : boolean;
+    client_ack_srv7_seen    : boolean;
+    client_ack_srv8_seen    : boolean;
+    client_ack_srv9_seen    : boolean;  
     reply_ack_sent          : boolean;  
     pending_reply_ack       : boolean;  
     reply_ack_consume_marker : boolean; 
     num_requests_sent : 0..100;  
 
 ASSIGN
-    init(fault_mode) := none;
-
+    init(fault_mode_stuck_at) := none;
     init(client_request_state)   := sending;
     init(client_ack_state)       := receiving;
     init(client_reply_ack_state) := sending;
@@ -510,28 +507,34 @@ ASSIGN
     init(ack_toggle)             := FALSE;
     init(reply_ack_toggle)       := FALSE;
     init(ack_received)           := FALSE;
-    init(request_sent)           := FALSE;
-    init(ack_source)             := none;
+    init(request_sent)            := FALSE;
+    init(ack_source)              := none;
     init(client_ack_srv0_seen)   := FALSE;
     init(client_ack_srv1_seen)   := FALSE;
     init(client_ack_srv2_seen)   := FALSE;
+    init(client_ack_srv3_seen)   := FALSE;
+    init(client_ack_srv4_seen)   := FALSE;
+    init(client_ack_srv5_seen)   := FALSE;
+    init(client_ack_srv6_seen)   := FALSE;
+    init(client_ack_srv7_seen)   := FALSE;
+    init(client_ack_srv8_seen)   := FALSE;
+    init(client_ack_srv9_seen)   := FALSE;
     init(reply_ack_sent)         := TRUE;
     init(pending_reply_ack)      := FALSE;
     init(reply_ack_consume_marker)  := FALSE;
     init(num_requests_sent) := 0;
-
-    next(fault_mode) :=
+    next(fault_mode_stuck_at) :=
         case
-            fault_mode = none : {none, stuck_sending, stuck_sent};
-            TRUE              : fault_mode;
+            fault_mode_stuck_at = none : {none, stuck_sending, stuck_sent};
+            TRUE              : fault_mode_stuck_at;
         esac;
 
-    next(client_request_state) := case
-        fault_mode = stuck_sending : sending;
-        fault_mode = stuck_sent : sent;
 
+    next(client_request_state) := case
+        fault_mode_stuck_at = stuck_sent : sent;
+        fault_mode_stuck_at = stuck_sending : sending;
         client_request_state = sending & request_queue.queue_full : sending;
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
         (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
         (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : sent;
         client_request_state = sent & !request_queue.queue_full : sending;
@@ -550,65 +553,64 @@ ASSIGN
     next(client_reply_ack_state) := case
         client_reply_ack_state = sending & reply_ack_queue.queue_full : sending;
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : sent;
-        client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle[client_id] : sending;
+        client_reply_ack_state = sent & !reply_ack_queue.queue_full : sending;
         client_reply_ack_state = sent & reply_ack_queue.queue_full : sent;
         TRUE : client_reply_ack_state;
     esac;
 
     next(request_toggle) := case
-        fault_mode = none &
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
+        fault_mode_stuck_at = none &
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
         (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
         (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : !request_toggle;
         TRUE : request_toggle;
     esac;
 
     next(ack_toggle) := case
-        fault_mode = none &
         client_ack_state = receiving & !ack_queue.queue_empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id | ack_owners[2] = self_id) : !ack_toggle;
         TRUE : ack_toggle;
     esac;
 
     next(reply_ack_toggle) := case
-        fault_mode = none &
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : !reply_ack_toggle;
         TRUE : reply_ack_toggle;
     esac;
 
     next(ack_received) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : FALSE;   
-        client_ack_state = receiving & !ack_queue.queue_empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id | ack_owners[2] = self_id) : TRUE;
+        client_ack_state = receiving & !ack_queue.queue_empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id | ack_owners[2] = self_id) : TRUE;    -- reply received
         TRUE : ack_received;
     esac;
 
     next(reply_ack_sent) := case
         client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;  
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
         (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
         (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : FALSE;  
         TRUE : reply_ack_sent;
     esac;
 
-    next(ack_source) := case
-        client_ack_state = receiving & ack_queue.last_producer_toggle[0] != client_ack_srv0_seen : srv0;
-        client_ack_state = receiving & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : srv1;
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
-        (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
-        (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : none;
-        TRUE : ack_source;
-    esac;
-
     next(request_sent) := case
-        fault_mode = none &
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
+        fault_mode_stuck_at = none &
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
         (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
         (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : TRUE;
         client_ack_state = receiving & !ack_queue.queue_empty & request_sent & (ack_owners[0] = self_id | ack_owners[1] = self_id | ack_owners[2] = self_id) : FALSE;
         TRUE : request_sent;
     esac;
 
+    next(ack_source) := case
+        client_ack_state = receiving & ack_queue.last_producer_toggle[0] != client_ack_srv0_seen : srv0;
+        client_ack_state = receiving & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : srv1;
+        client_ack_state = receiving & ack_queue.last_producer_toggle[2] != client_ack_srv2_seen : srv2;
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
+        (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
+        (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) : none;
+        TRUE : ack_source;
+    esac;
+
     next(pending_reply_ack) := case
-        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE;
+        client_reply_ack_state = sending & !reply_ack_queue.queue_full & ack_received : TRUE; 
         pending_reply_ack & (
             (ack_source = srv0 & reply_ack_queue.last_consumer_toggle[0] != reply_ack_consume_marker) |
             (ack_source = srv1 & reply_ack_queue.last_consumer_toggle[1] != reply_ack_consume_marker) |
@@ -633,18 +635,53 @@ ASSIGN
         client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[1] != client_ack_srv1_seen : ack_queue.last_producer_toggle[1];
         TRUE : client_ack_srv1_seen;
     esac;
-    
+
     next(client_ack_srv2_seen) := case
         client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[2] != client_ack_srv2_seen : ack_queue.last_producer_toggle[2];
         TRUE : client_ack_srv2_seen;
     esac;
 
+    next(client_ack_srv3_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[3] != client_ack_srv3_seen : ack_queue.last_producer_toggle[3];
+        TRUE : client_ack_srv3_seen;
+    esac;
+
+    next(client_ack_srv4_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[4] != client_ack_srv4_seen : ack_queue.last_producer_toggle[4];
+        TRUE : client_ack_srv4_seen;
+    esac;
+
+    next(client_ack_srv5_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[5] != client_ack_srv5_seen : ack_queue.last_producer_toggle[5];
+        TRUE : client_ack_srv5_seen;
+    esac;
+
+    next(client_ack_srv6_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[6] != client_ack_srv6_seen : ack_queue.last_producer_toggle[6];
+        TRUE : client_ack_srv6_seen;
+    esac;
+
+    next(client_ack_srv7_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[7] != client_ack_srv7_seen : ack_queue.last_producer_toggle[7];
+        TRUE : client_ack_srv7_seen;
+    esac;
+
+    next(client_ack_srv8_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[8] != client_ack_srv8_seen : ack_queue.last_producer_toggle[8];
+        TRUE : client_ack_srv8_seen;
+    esac;
+
+    next(client_ack_srv9_seen) := case
+        client_ack_state = receiving & !ack_queue.queue_empty & ack_queue.last_producer_toggle[9] != client_ack_srv9_seen : ack_queue.last_producer_toggle[9];
+        TRUE : client_ack_srv9_seen;
+    esac;
+
     next(num_requests_sent) := case
-        fault_mode = none &
-        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_client_turn = client_id &
+        fault_mode_stuck_at = none &
+        client_request_state = sending & !request_queue.queue_full & reply_ack_sent & !pending_reply_ack & request_queue.next_producer_turn = client_id &
         (pending_reply_ack_states[0] = FALSE & pending_reply_ack_states[1] = FALSE & pending_reply_ack_states[2] = FALSE) &
-        (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;
-        TRUE : num_requests_sent;
+        (reply_ack_sent_states[0] = TRUE & reply_ack_sent_states[1] = TRUE & reply_ack_sent_states[2] = TRUE) & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
     esac;
 
 DEFINE
@@ -652,15 +689,18 @@ DEFINE
         client_id = 0 : clt0;
         client_id = 1 : clt1;
         client_id = 2 : clt2;
+        client_id = 3 : clt3;
+        client_id = 4 : clt4;
+        client_id = 5 : clt5;
+        client_id = 6 : clt6;
+        client_id = 7 : clt7;
+        client_id = 8 : clt8;
+        client_id = 9 : clt9;
     esac;
 
 
--- =========================================================
--- Server Extended
--- =========================================================
 MODULE ServerExtended(request_queue, ack_queue, reply_ack_queue, reply_ack_owners, server_id)
 VAR
-    fault_mode : {none, stuck_receiving, stuck_received};
     server_request_state    : {receiving, received};
     server_ack_state        : {sending, sent};
     server_reply_ack_state  : {receiving, received};
@@ -669,17 +709,15 @@ VAR
     ack_toggle              : boolean;
     reply_ack_toggle        : boolean;               
 
-    request_received        : boolean;
+    request_received        : boolean;   -- guards sending ack 
     reply_ack_received      : boolean;
-    request_source : {none, clt0, clt1, clt2, clt3, clt4, clt5, clt6, clt7, clt8, clt9};
+    request_source          : {none, clt0, clt1, clt2, clt3, clt4, clt5, clt6, clt7, clt8, clt9};
     pending_ack             : boolean;
-    ack_consume_marker      : boolean;
-    memory_cache            : {full, free};
+    ack_consume_marker      : boolean;    -- guards receiving requests 
+    memory_cache            : {full, free};  -- reply cache
     num_requests_received : 0..100;
 
 ASSIGN
-    init(fault_mode) := none;
-
     init(server_request_state)   := receiving;
     init(server_ack_state)       := sending;
     init(server_reply_ack_state) := receiving;
@@ -694,18 +732,9 @@ ASSIGN
     init(memory_cache)           := free;
     init(num_requests_received) := 0;
 
-    next(fault_mode) :=
-        case
-            fault_mode = none : {none, stuck_receiving, stuck_received};
-            TRUE              : fault_mode;
-        esac;
-
     next(server_request_state) := case
-        fault_mode = stuck_receiving : receiving;
-        fault_mode = stuck_received : received;
-
         server_request_state = receiving & request_queue.queue_empty : receiving;
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : received;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id : received;
         server_request_state = received & !request_queue.queue_empty : receiving;
         server_request_state = received & request_queue.queue_empty : received;
         TRUE : server_request_state;
@@ -719,7 +748,7 @@ ASSIGN
         TRUE : server_ack_state;
     esac;
 
-    -- Server waits for the reply_ack from the originating client, then frees the cache.
+    -- Server waits for the reply_ack from the client, then frees the cache.
     next(server_reply_ack_state) := case
         server_reply_ack_state = receiving & reply_ack_queue.queue_empty : receiving;
         server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & (reply_ack_owners[0] = self_id | reply_ack_owners[1] = self_id | reply_ack_owners[2] = self_id) : received;
@@ -729,7 +758,7 @@ ASSIGN
     esac;
 
     next(request_toggle) := case
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : !request_toggle;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id : !request_toggle;
         TRUE : request_toggle;
     esac;
 
@@ -744,21 +773,25 @@ ASSIGN
     esac;
 
     next(request_received) := case
-        server_ack_state = sending & !ack_queue.queue_full & request_received : FALSE;
-        fault_mode = none &
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : TRUE;
+        server_ack_state = sending & !ack_queue.queue_full & request_received : FALSE;    -- ack just sent
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id : TRUE;     -- request received
         TRUE : request_received;
     esac;
 
     next(reply_ack_received) := case
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & (reply_ack_owners[0] = self_id | reply_ack_owners[1] = self_id | reply_ack_owners[2] = self_id) : TRUE;
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id : FALSE;
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & (reply_ack_owners[0] = self_id | reply_ack_owners[1] = self_id | reply_ack_owners[2] = self_id) : TRUE;   -- reply ack received
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id : FALSE;  -- new request received
         TRUE : reply_ack_received;
     esac;
 
+    next(memory_cache) := case
+        server_ack_state = sending & !ack_queue.queue_full & request_received : full;  -- reply being sent, cache it
+        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & (reply_ack_owners[0] = self_id | reply_ack_owners[1] = self_id | reply_ack_owners[2] = self_id) : free;  -- reply_ack received, free cache
+        TRUE : memory_cache;
+    esac;
+
     next(request_source) := case
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id :
-            request_queue.producer_id[request_queue.head];
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id : request_queue.producer_id[request_queue.head];
         TRUE : request_source;
     esac;
 
@@ -779,16 +812,9 @@ ASSIGN
         TRUE : ack_consume_marker;
     esac;
 
-    next(memory_cache) := case
-        server_ack_state = sending & !ack_queue.queue_full & request_received : full;
-        server_reply_ack_state = receiving & !reply_ack_queue.queue_empty & (reply_ack_owners[0] = self_id | reply_ack_owners[1] = self_id | reply_ack_owners[2] = self_id) : free;
-        TRUE : memory_cache;
-    esac;
-
     next(num_requests_received) := case
-        fault_mode = none &
-        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
-        TRUE : num_requests_received;
+        server_request_state = receiving & !request_queue.queue_empty & reply_ack_received & !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id & num_requests_received < 100 : num_requests_received + 1;                   
+        TRUE : num_requests_received;                                                    
     esac;
 
 DEFINE
@@ -796,27 +822,31 @@ DEFINE
         server_id = 0 : srv0;
         server_id = 1 : srv1;
         server_id = 2 : srv2;
+        server_id = 3 : srv3;
+        server_id = 4 : srv4;
+        server_id = 5 : srv5;
+        server_id = 6 : srv6;
+        server_id = 7 : srv7;
+        server_id = 8 : srv8;
+        server_id = 9 : srv9;
     esac;
 
 
--- =========================================================
--- Wrapper Extended
--- =========================================================
 MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    request_prod_toggles : array 0..9 of boolean;
-    request_cons_toggles : array 0..9 of boolean;
-    ack_prod_toggles : array 0..9 of boolean;
-    ack_cons_toggles : array 0..9 of boolean;
-    reply_ack_prod_toggles : array 0..9 of boolean;
-    reply_ack_cons_toggles : array 0..9 of boolean;
+    request_prod_toggles     : array 0..9 of boolean;
+    request_cons_toggles     : array 0..9 of boolean;
+    ack_prod_toggles         : array 0..9 of boolean;
+    ack_cons_toggles         : array 0..9 of boolean;
+    reply_ack_prod_toggles   : array 0..9 of boolean;
+    reply_ack_cons_toggles   : array 0..9 of boolean;
 
-    reply_ack_sent_states : array 0..9 of boolean;
+    reply_ack_sent_states    : array 0..9 of boolean;
     pending_reply_ack_states : array 0..9 of boolean;
-    ack_owners : array 0..9 of {none, clt0, clt1, clt2};
-    reply_ack_owners : array 0..9 of {none, srv0, srv1, srv2};
+    ack_owners               : array 0..9 of {none, clt0, clt1, clt2, clt3, clt4, clt5, clt6, clt7, clt8, clt9};
+    reply_ack_owners         : array 0..9 of {none, srv0, srv1, srv2, srv3, srv4, srv5, srv6, srv7, srv8, srv9};
 
     client1 : ClientExtended(request_queue, ack_queue, reply_ack_queue, ack_owners, 0, reply_ack_sent_states, pending_reply_ack_states);
     client2 : ClientExtended(request_queue, ack_queue, reply_ack_queue, ack_owners, 1, reply_ack_sent_states, pending_reply_ack_states);
@@ -826,14 +856,13 @@ VAR
     server2 : ServerExtended(request_queue, ack_queue, reply_ack_queue, reply_ack_owners, 1);
     server3 : ServerExtended(request_queue, ack_queue, reply_ack_queue, reply_ack_owners, 2);
 
-    request_queue : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
-    ack_queue : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
+    request_queue   : QueueExtended(Q_SIZE, request_prod_toggles, request_cons_toggles);
+    ack_queue       : QueueExtended(Q_SIZE, ack_prod_toggles, ack_cons_toggles);
     reply_ack_queue : QueueExtended(Q_SIZE, reply_ack_prod_toggles, reply_ack_cons_toggles);
-
 ASSIGN
     request_prod_toggles[0] := client1.request_toggle;
     request_prod_toggles[1] := client2.request_toggle;
-    request_prod_toggles[2] := FALSE;
+    request_prod_toggles[2] := client3.request_toggle;
     request_prod_toggles[3] := FALSE;
     request_prod_toggles[4] := FALSE;
     request_prod_toggles[5] := FALSE;
@@ -933,10 +962,12 @@ ASSIGN
     reply_ack_owners[9] := none;
 
 
--- =========================================================
--- Main module
--- =========================================================
-MODULE main
+MODULE Sync()
 VAR
+    nominal  : Nominal();
     extended : Extended();
 
+
+MODULE main
+VAR
+    sync : Sync();
