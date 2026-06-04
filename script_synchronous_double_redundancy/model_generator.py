@@ -67,8 +67,24 @@ class ModelGenerator:
 
 
     def _assemble_model(self, original_smv, modules):
-        """Assemble the final generated SMV model."""
+        """Assemble the final generated SMV model"""
         nominal_base = strip_main_module(original_smv)
+
+        # Build the LTLSPEC section from the parsed properties
+        properties_blocks = []
+        for prop in self.fault_model.properties:
+            clean_spec = "\n".join(f"    {line.strip()}" for line in prop.spec.strip().split("\n"))
+            
+            ltlspec_text = ""
+            if prop.comment:
+                ltlspec_text += f"-- {prop.comment}\n"
+            
+            ltlspec_text += f"LTLSPEC G (\n{clean_spec}\n)"
+            
+            properties_blocks.append(ltlspec_text)
+
+        # Combine all if there are multiple properties parsed from XML
+        properties_section = "\n\n".join(properties_blocks)
 
         parts = [
             nominal_base,
@@ -76,8 +92,12 @@ class ModelGenerator:
             modules["client"].rstrip(),
             modules["server"].rstrip(),
             modules["wrapper"].rstrip(),
-            modules["sync"].rstrip(),
-            modules["main"].rstrip()
+            modules["sync"].rstrip()
         ]
+
+        if properties_section:
+            parts.append(properties_section)
+
+        parts.append(modules["main"].rstrip())
 
         return "\n\n\n".join(parts)
