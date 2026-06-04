@@ -59,11 +59,6 @@ class RRAExtender(BaseExtender):
         nominal_ack_cond = 'client_ack_state = receiving & !ack_queue.queue_empty'
         text = text.replace(nominal_ack_cond, f'{nominal_ack_cond} & request_sent & ({ack_owners_guard})')
 
-        text = text.replace(
-            'client_reply_ack_state = sent & !reply_ack_queue.queue_full : sending;',
-            'client_reply_ack_state = sent & !reply_ack_queue.queue_full & reply_ack_toggle = reply_ack_queue.last_producer_toggle[client_id] : sending;'
-        )
-
         request_sent_block = (
             f'    next(request_sent) := case\n'
             f'        {nominal_send_cond}{sending_guard} : TRUE;\n'
@@ -219,8 +214,8 @@ class RRAExtender(BaseExtender):
     def extend_wrapper(self):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
 
-        clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(n_clients)])
-        srv_enum = ', '.join(['none'] + [f'srv{i}' for i in range(n_servers)])
+        full_clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(MAX_REDUNDANCY)])
+        full_srv_enum = ', '.join(['none'] + [f'srv{i}' for i in range(MAX_REDUNDANCY)])
 
         var_arrays = (
             f'    request_prod_toggles     : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
@@ -231,8 +226,8 @@ class RRAExtender(BaseExtender):
             f'    reply_ack_cons_toggles   : array 0..{MAX_REDUNDANCY - 1} of boolean;\n\n'
             f'    reply_ack_sent_states    : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
             f'    pending_reply_ack_states : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
-            f'    ack_owners               : array 0..{MAX_REDUNDANCY - 1} of {{{clt_enum}}};\n'
-            f'    reply_ack_owners         : array 0..{MAX_REDUNDANCY - 1} of {{{srv_enum}}};\n\n'
+            f'    ack_owners               : array 0..{MAX_REDUNDANCY - 1} of {{{full_clt_enum}}};\n'
+            f'    reply_ack_owners         : array 0..{MAX_REDUNDANCY - 1} of {{{full_srv_enum}}};\n\n'
         )
 
         var_clients = ''.join(
