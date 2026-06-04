@@ -29,7 +29,7 @@ class RRExtender(BaseExtender):
         # Build guards
         all_ready = ' & '.join(f'client_states[{i}] = TRUE' for i in range(n_clients))
         turn_guard = (
-            f' & request_queue.next_client_turn = client_id &\n'
+            f' & request_queue.next_producer_turn = client_id &\n'
             f'            ({all_ready})'
         )
         ack_owners_guard = (
@@ -101,7 +101,7 @@ class RRExtender(BaseExtender):
         )
 
         # Extend the receiving condition 
-        rr_guard = '& !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id'
+        rr_guard = '& !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id'
         text = text.replace(
             'server_request_state = receiving & !request_queue.empty',
             f'server_request_state = receiving & !request_queue.empty {rr_guard}',
@@ -145,7 +145,7 @@ class RRExtender(BaseExtender):
     def extend_wrapper(self):
         n_clients, n_servers = self._get_redundancy(self._fault_model)
 
-        clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(n_clients)])
+        full_clt_enum = ', '.join(['none'] + [f'clt{i}' for i in range(MAX_REDUNDANCY)])
 
         var_arrays = (
             f'    request_prod_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
@@ -153,7 +153,7 @@ class RRExtender(BaseExtender):
             f'    ack_prod_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
             f'    ack_cons_toggles : array 0..{MAX_REDUNDANCY - 1} of boolean;\n\n'
             f'    client_states : array 0..{MAX_REDUNDANCY - 1} of boolean;\n'
-            f'    ack_owners : array 0..{MAX_REDUNDANCY - 1} of {{{clt_enum}}};\n'
+            f'    ack_owners : array 0..{MAX_REDUNDANCY - 1} of {{{full_clt_enum}}};\n'
         )
 
         var_clients = ''.join(
