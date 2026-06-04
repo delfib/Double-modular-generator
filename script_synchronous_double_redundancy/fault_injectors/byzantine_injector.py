@@ -43,7 +43,7 @@ class ByzantineInjector(BaseInjector):
             )
 
         # Avoid side effects on counters and interface toggles
-        potential_side_effects = ["request_toggle", "reply_ack_toggle", "num_requests_sent", "num_requests_received", "request_sent"]
+        potential_side_effects = ["request_toggle", "num_requests_sent", "num_requests_received", "request_sent"]
         
         # Remove variables that are explicitly being targeted by faults in this injector pass
         fault_targets = [f.variable for f in self.faults]
