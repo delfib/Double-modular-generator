@@ -46,7 +46,7 @@ class RRAExtender(BaseExtender):
         sent_states_guard = ' & '.join(f'reply_ack_sent_states[{i}] = TRUE' for i in range(n_clients))
         
         sending_guard = (
-            f' & request_queue.next_client_turn = client_id &\n'
+            f' & request_queue.next_producer_turn = client_id &\n'
             f'        ({pending_states_guard}) &\n'
             f'        ({sent_states_guard})'
         )
@@ -159,7 +159,7 @@ class RRAExtender(BaseExtender):
             f'    init(reply_ack_received)     := TRUE;\n{new_inits}'
         )
 
-        rra_receive_guard = '& !pending_ack & !request_queue.request_consumed & request_queue.next_server_turn = server_id'
+        rra_receive_guard = '& !pending_ack & !request_queue.request_consumed & request_queue.next_consumer_turn = server_id'
         
         reply_ack_owners_guard = ' | '.join(f'reply_ack_owners[{i}] = self_id' for i in range(n_clients))
 
