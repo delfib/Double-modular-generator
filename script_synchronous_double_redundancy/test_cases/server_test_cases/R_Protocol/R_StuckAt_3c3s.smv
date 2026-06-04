@@ -152,7 +152,7 @@ ASSIGN
     init(last_server_toggle[7]) := FALSE;
     init(last_server_toggle[8]) := FALSE;
     init(last_server_toggle[9]) := FALSE;
-    init(next_client_turn) := {0};
+    init(next_client_turn) := {0,1,2};
     init(next_server_turn) := {0,1,2};
 
     next(tail) := case
@@ -283,7 +283,7 @@ ASSIGN
         TRUE : last_server_toggle[9];
     esac;
 
-    next(next_client_turn) := {0};
+    next(next_client_turn) := {0,1,2};
 
     next(next_server_turn) := {0,1,2};
 
@@ -295,7 +295,7 @@ DEFINE
 
 
 -- =========================================================
--- Client module
+-- Client Extended
 -- =========================================================
 
 
@@ -381,7 +381,7 @@ ASSIGN
 
 
 -- =========================================================
--- Nominal wrapper
+-- Extended Wrapper
 -- =========================================================
 
 
@@ -393,14 +393,16 @@ VAR
     server_toggles : array 0..9 of boolean;
     client_states : array 0..9 of {sending, sent};
     client1 : ClientExtended(queue, 0, client_states);
+    client2 : ClientExtended(queue, 1, client_states);
+    client3 : ClientExtended(queue, 2, client_states);
     server1 : ServerExtended(queue, 0);
     server2 : ServerExtended(queue, 1);
     server3 : ServerExtended(queue, 2);
     queue : QueueExtended(Q_SIZE, client_toggles, server_toggles);
 ASSIGN
     client_toggles[0] := client1.request_toggle;
-    client_toggles[1] := FALSE;
-    client_toggles[2] := FALSE;
+    client_toggles[1] := client2.request_toggle;
+    client_toggles[2] := client3.request_toggle;
     client_toggles[3] := FALSE;
     client_toggles[4] := FALSE;
     client_toggles[5] := FALSE;
@@ -419,8 +421,8 @@ ASSIGN
     server_toggles[8] := FALSE;
     server_toggles[9] := FALSE;
     client_states[0] := client1.client_state;
-    client_states[1] := sending;
-    client_states[2] := sending;
+    client_states[1] := client2.client_state;
+    client_states[2] := client3.client_state;
     client_states[3] := sending;
     client_states[4] := sending;
     client_states[5] := sending;
@@ -434,7 +436,6 @@ MODULE Sync()
 VAR
     nominal  : Nominal();
     extended : Extended();
-
 
 
 LTLSPEC (

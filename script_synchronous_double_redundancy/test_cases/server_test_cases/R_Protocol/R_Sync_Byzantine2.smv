@@ -5,7 +5,7 @@ MODULE Queue(Q_SIZE, client_toggle, server_toggle)
 VAR
     head : 0..3;
     tail : 0..3;
-    last_client_toggle : boolean;  -- last toggle value we saw
+    last_client_toggle : boolean;
     last_server_toggle : boolean;
 
 ASSIGN
@@ -15,7 +15,7 @@ ASSIGN
     init(last_server_toggle) := FALSE;
 
     next(tail) := case
-        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
+        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE; 
         TRUE : tail;
     esac;
 
@@ -119,37 +119,118 @@ VAR
     queue : Queue(Q_SIZE, client.request_toggle, server.request_toggle);
 
 
-MODULE QueueExtended(Q_SIZE, client_toggle, server_toggles)
+MODULE QueueExtended(Q_SIZE, client_toggles, server_toggles)
 VAR
     head : 0..3;
     tail : 0..3;
-    last_client_toggle : boolean;  -- last toggle value we saw
-    last_server_toggle : array 0..1 of boolean;
+    last_client_toggle : array 0..9 of boolean;
+    last_server_toggle : array 0..9 of boolean;
 
-    next_server_turn : 0..1;
+    next_client_turn : 0..9;
+    next_server_turn : 0..9;
 
 ASSIGN
     init(head) := 0;
     init(tail) := 0;
-    init(last_client_toggle) := FALSE;
+        init(last_client_toggle[0]) := FALSE;
+    init(last_client_toggle[1]) := FALSE;
+    init(last_client_toggle[2]) := FALSE;
+    init(last_client_toggle[3]) := FALSE;
+    init(last_client_toggle[4]) := FALSE;
+    init(last_client_toggle[5]) := FALSE;
+    init(last_client_toggle[6]) := FALSE;
+    init(last_client_toggle[7]) := FALSE;
+    init(last_client_toggle[8]) := FALSE;
+    init(last_client_toggle[9]) := FALSE;
         init(last_server_toggle[0]) := FALSE;
     init(last_server_toggle[1]) := FALSE;
+    init(last_server_toggle[2]) := FALSE;
+    init(last_server_toggle[3]) := FALSE;
+    init(last_server_toggle[4]) := FALSE;
+    init(last_server_toggle[5]) := FALSE;
+    init(last_server_toggle[6]) := FALSE;
+    init(last_server_toggle[7]) := FALSE;
+    init(last_server_toggle[8]) := FALSE;
+    init(last_server_toggle[9]) := FALSE;
+    init(next_client_turn) := {0};
     init(next_server_turn) := {0,1};
 
     next(tail) := case
-        (client_toggle != last_client_toggle) : (tail + 1) mod Q_SIZE;    -- produce if toggle changed (new request detected)
+        (client_toggles[0] != last_client_toggle[0]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[1] != last_client_toggle[1]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[2] != last_client_toggle[2]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[3] != last_client_toggle[3]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[4] != last_client_toggle[4]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[5] != last_client_toggle[5]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[6] != last_client_toggle[6]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[7] != last_client_toggle[7]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[8] != last_client_toggle[8]) : (tail + 1) mod Q_SIZE;
+        (client_toggles[9] != last_client_toggle[9]) : (tail + 1) mod Q_SIZE;
         TRUE : tail;
     esac;
 
     next(head) := case
         (server_toggles[0] != last_server_toggle[0]) : (head + 1) mod Q_SIZE;
         (server_toggles[1] != last_server_toggle[1]) : (head + 1) mod Q_SIZE;
+        (server_toggles[2] != last_server_toggle[2]) : (head + 1) mod Q_SIZE;
+        (server_toggles[3] != last_server_toggle[3]) : (head + 1) mod Q_SIZE;
+        (server_toggles[4] != last_server_toggle[4]) : (head + 1) mod Q_SIZE;
+        (server_toggles[5] != last_server_toggle[5]) : (head + 1) mod Q_SIZE;
+        (server_toggles[6] != last_server_toggle[6]) : (head + 1) mod Q_SIZE;
+        (server_toggles[7] != last_server_toggle[7]) : (head + 1) mod Q_SIZE;
+        (server_toggles[8] != last_server_toggle[8]) : (head + 1) mod Q_SIZE;
+        (server_toggles[9] != last_server_toggle[9]) : (head + 1) mod Q_SIZE;
         TRUE : head;
     esac;
 
-    next(last_client_toggle) := case
-        (client_toggle != last_client_toggle) : client_toggle;
-        TRUE : last_client_toggle;
+        next(last_client_toggle[0]) := case
+        (client_toggles[0] != last_client_toggle[0]) : client_toggles[0];
+        TRUE : last_client_toggle[0];
+    esac;
+
+    next(last_client_toggle[1]) := case
+        (client_toggles[1] != last_client_toggle[1]) : client_toggles[1];
+        TRUE : last_client_toggle[1];
+    esac;
+
+    next(last_client_toggle[2]) := case
+        (client_toggles[2] != last_client_toggle[2]) : client_toggles[2];
+        TRUE : last_client_toggle[2];
+    esac;
+
+    next(last_client_toggle[3]) := case
+        (client_toggles[3] != last_client_toggle[3]) : client_toggles[3];
+        TRUE : last_client_toggle[3];
+    esac;
+
+    next(last_client_toggle[4]) := case
+        (client_toggles[4] != last_client_toggle[4]) : client_toggles[4];
+        TRUE : last_client_toggle[4];
+    esac;
+
+    next(last_client_toggle[5]) := case
+        (client_toggles[5] != last_client_toggle[5]) : client_toggles[5];
+        TRUE : last_client_toggle[5];
+    esac;
+
+    next(last_client_toggle[6]) := case
+        (client_toggles[6] != last_client_toggle[6]) : client_toggles[6];
+        TRUE : last_client_toggle[6];
+    esac;
+
+    next(last_client_toggle[7]) := case
+        (client_toggles[7] != last_client_toggle[7]) : client_toggles[7];
+        TRUE : last_client_toggle[7];
+    esac;
+
+    next(last_client_toggle[8]) := case
+        (client_toggles[8] != last_client_toggle[8]) : client_toggles[8];
+        TRUE : last_client_toggle[8];
+    esac;
+
+    next(last_client_toggle[9]) := case
+        (client_toggles[9] != last_client_toggle[9]) : client_toggles[9];
+        TRUE : last_client_toggle[9];
     esac;
 
         next(last_server_toggle[0]) := case
@@ -162,47 +243,122 @@ ASSIGN
         TRUE : last_server_toggle[1];
     esac;
 
-    next(next_server_turn) := case
-        next_server_turn = 0 : 1;
-        next_server_turn = 1 : 0;
-        TRUE : next_server_turn;
+    next(last_server_toggle[2]) := case
+        (server_toggles[2] != last_server_toggle[2]) : server_toggles[2];
+        TRUE : last_server_toggle[2];
     esac;
 
+    next(last_server_toggle[3]) := case
+        (server_toggles[3] != last_server_toggle[3]) : server_toggles[3];
+        TRUE : last_server_toggle[3];
+    esac;
+
+    next(last_server_toggle[4]) := case
+        (server_toggles[4] != last_server_toggle[4]) : server_toggles[4];
+        TRUE : last_server_toggle[4];
+    esac;
+
+    next(last_server_toggle[5]) := case
+        (server_toggles[5] != last_server_toggle[5]) : server_toggles[5];
+        TRUE : last_server_toggle[5];
+    esac;
+
+    next(last_server_toggle[6]) := case
+        (server_toggles[6] != last_server_toggle[6]) : server_toggles[6];
+        TRUE : last_server_toggle[6];
+    esac;
+
+    next(last_server_toggle[7]) := case
+        (server_toggles[7] != last_server_toggle[7]) : server_toggles[7];
+        TRUE : last_server_toggle[7];
+    esac;
+
+    next(last_server_toggle[8]) := case
+        (server_toggles[8] != last_server_toggle[8]) : server_toggles[8];
+        TRUE : last_server_toggle[8];
+    esac;
+
+    next(last_server_toggle[9]) := case
+        (server_toggles[9] != last_server_toggle[9]) : server_toggles[9];
+        TRUE : last_server_toggle[9];
+    esac;
+
+    next(next_client_turn) := {0};
+
+    next(next_server_turn) := {0,1};
+
 DEFINE
-    request_consumed := last_server_toggle[0] != server_toggles[0] | last_server_toggle[1] != server_toggles[1];
+    request_consumed := last_server_toggle[0] != server_toggles[0] | last_server_toggle[1] != server_toggles[1] | last_server_toggle[2] != server_toggles[2] | last_server_toggle[3] != server_toggles[3] | last_server_toggle[4] != server_toggles[4] | last_server_toggle[5] != server_toggles[5] | last_server_toggle[6] != server_toggles[6] | last_server_toggle[7] != server_toggles[7] | last_server_toggle[8] != server_toggles[8] | last_server_toggle[9] != server_toggles[9];
     full := ((tail + 1) mod Q_SIZE = head);
     empty := (tail = head);
 
 
 
 -- =========================================================
--- Server Extended
+-- Client module
+-- =========================================================
+
+
+MODULE ClientExtended(queue, client_id, client_states)
+VAR
+    client_state : {sending, sent};
+    request_toggle : boolean;  
+    num_requests_sent : 0..100;         
+
+ASSIGN
+    init(client_state) := sending;
+    init(request_toggle) := FALSE;
+    init(num_requests_sent) := 0;
+
+    next(client_state) :=
+        case
+            client_state = sending & queue.full : sending;
+            client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending & client_states[5] = sending & client_states[6] = sending & client_states[7] = sending & client_states[8] = sending & client_states[9] = sending) : sent;
+            client_state = sent & !queue.full : sending;
+            client_state = sent & queue.full : sent;
+            TRUE : client_state;
+        esac;
+ 
+    next(request_toggle) := case
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending & client_states[5] = sending & client_states[6] = sending & client_states[7] = sending & client_states[8] = sending & client_states[9] = sending) : !request_toggle;                   
+        TRUE : request_toggle;                                                    
+    esac;
+
+    next(num_requests_sent) := case
+        client_state = sending & !queue.full & queue.next_client_turn = client_id &
+                (client_states[0] = sending & client_states[1] = sending & client_states[2] = sending & client_states[3] = sending & client_states[4] = sending & client_states[5] = sending & client_states[6] = sending & client_states[7] = sending & client_states[8] = sending & client_states[9] = sending) & num_requests_sent < 100 : num_requests_sent + 1;                   
+        TRUE : num_requests_sent;                                                    
+    esac;
+
+
+-- =========================================================
+-- Server module
 -- =========================================================
 
 
 MODULE ServerExtended(queue, server_id)
 VAR
-    fault_mode : {none, byzantine_server_state};
+    fault_mode_byzantine : {none, byzantine_state};
     server_state : {receiving, received};
     request_toggle : boolean;  
     num_requests_received : 0..100;
 ASSIGN
-    init(fault_mode) := none;
-
+    init(fault_mode_byzantine) := none;
     init(server_state) := receiving;
     init(request_toggle) := FALSE;
     init(num_requests_received) := 0;
-
-    next(fault_mode) :=
+    next(fault_mode_byzantine) :=
         case
-            fault_mode = none : {none, byzantine_server_state};
-            TRUE              : fault_mode;
+            fault_mode_byzantine = none : {none, byzantine_state};
+            TRUE              : fault_mode_byzantine;
         esac;
+
 
     next(server_state) :=
         case
-        fault_mode = byzantine_server_state : {receiving, received};
-
+        fault_mode_byzantine = byzantine_state : {receiving, received};
             server_state = receiving & queue.empty : receiving;
             server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : received;
             server_state = received & !queue.empty : receiving;
@@ -211,22 +367,20 @@ ASSIGN
         esac;
 
     next(request_toggle) := case
-        fault_mode = none &
-        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : !request_toggle;
+        fault_mode_byzantine = none &
+        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id : !request_toggle;                   
         TRUE : request_toggle;                                                    
-    
     esac;
 
     next(num_requests_received) := case
-        fault_mode = none &
-        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;
+        fault_mode_byzantine = none &
+        server_state = receiving & !queue.empty & !queue.request_consumed & queue.next_server_turn = server_id & num_requests_received < 100 : num_requests_received + 1;                   
         TRUE : num_requests_received;                                                    
-    
     esac;
 
 
 -- =========================================================
--- Extended wrapper
+-- Nominal wrapper
 -- =========================================================
 
 
@@ -234,38 +388,69 @@ MODULE Extended()
 DEFINE
     Q_SIZE := 4;
 VAR
-    client : Client(queue);
-    server_toggles : array 0..1 of boolean;
-
-
+    client_toggles : array 0..9 of boolean;
+    server_toggles : array 0..9 of boolean;
+    client_states : array 0..9 of {sending, sent};
+    client1 : ClientExtended(queue, 0, client_states);
     server1 : ServerExtended(queue, 0);
-
     server2 : ServerExtended(queue, 1);
-    queue : QueueExtended(Q_SIZE, client.request_toggle, server_toggles);
-
+    queue : QueueExtended(Q_SIZE, client_toggles, server_toggles);
 ASSIGN
+    client_toggles[0] := client1.request_toggle;
+    client_toggles[1] := FALSE;
+    client_toggles[2] := FALSE;
+    client_toggles[3] := FALSE;
+    client_toggles[4] := FALSE;
+    client_toggles[5] := FALSE;
+    client_toggles[6] := FALSE;
+    client_toggles[7] := FALSE;
+    client_toggles[8] := FALSE;
+    client_toggles[9] := FALSE;
     server_toggles[0] := server1.request_toggle;
     server_toggles[1] := server2.request_toggle;
+    server_toggles[2] := FALSE;
+    server_toggles[3] := FALSE;
+    server_toggles[4] := FALSE;
+    server_toggles[5] := FALSE;
+    server_toggles[6] := FALSE;
+    server_toggles[7] := FALSE;
+    server_toggles[8] := FALSE;
+    server_toggles[9] := FALSE;
+    client_states[0] := client1.client_state;
+    client_states[1] := sending;
+    client_states[2] := sending;
+    client_states[3] := sending;
+    client_states[4] := sending;
+    client_states[5] := sending;
+    client_states[6] := sending;
+    client_states[7] := sending;
+    client_states[8] := sending;
+    client_states[9] := sending;
 
 
--- =========================================================
---  Synchronization Module
--- =========================================================
 MODULE Sync()
 VAR
     nominal  : Nominal();
     extended : Extended();
 
-LTLSPEC G (
-    nominal.server.num_requests_received =
+
+LTLSPEC (
+    (X X X X extended.queue.next_server_turn = 1) &
+
+    -- Force extended server1 to stay healthy for steps 1-3
+    (extended.server1.fault_mode_byzantine = none & X extended.server1.fault_mode_byzantine = none
+    & X X extended.server1.fault_mode_byzantine = none) &
+
+    -- Force extended server2 to stay healthy for steps 1-5
+    (extended.server2.fault_mode_byzantine = none & X extended.server2.fault_mode_byzantine = none
+    & X X extended.server2.fault_mode_byzantine = none & X X X extended.server2.fault_mode_byzantine = none
+    & X X X X extended.server2.fault_mode_byzantine = none)
+) ->
+    G(nominal.server.num_requests_received =
     extended.server1.num_requests_received +
-    extended.server2.num_requests_received 
-)
+    extended.server2.num_requests_received)
 
 
--- =========================================================
---  Main Module
--- =========================================================
 MODULE main
 VAR
     sync : Sync();
